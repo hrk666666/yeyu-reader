@@ -17,6 +17,7 @@
 - `phone/` — 手机端实现（Dart，`lib/services/band_book/`）
 - `kotlin/` — 手机端安卓桥（`BandBookPlugin.kt`，小米穿戴 SDK xms-wearable 1.4）
 - 手环端实现（VelaOS 快应用 rpk 源码，六机型分支）见仓库 `hrk666666/yeyu-band`
+- `rpk_resign/` — rpk 改包名与重签（纯 Dart），见 [rpk_resign/README.md](rpk_resign/README.md)
 
 ## 0. 传输层与硬约束
 

@@ -63,7 +63,7 @@
 | 路径 | 内容 |
 | --- | --- |
 | [`update.json`](update.json) | App 启动拉取的**更新检查 / 公告**单文件，字段说明见 [update.json.README.md](update.json.README.md) |
-| [`band_protocol/`](band_protocol/) | 手环传书**协议**（[PROTOCOL.md](band_protocol/PROTOCOL.md)）与双端源码：`phone/` 手机侧 Dart、`kotlin/` Android 桥（小米穿戴 SDK） |
+| [`band_protocol/`](band_protocol/) | 手环传书**协议**（[PROTOCOL.md](band_protocol/PROTOCOL.md)）与双端源码：`phone/` 手机侧 Dart、`kotlin/` Android 桥（小米穿戴 SDK）、`rpk_resign/` rpk 改包名与重签（纯 Dart，让官方版与内置书版共存） |
 | `fetcher/` `web/` `android/` | 遗留「什锦铺」Web 套件（存档，见文末） |
 
 手环端（VelaOS 快应用 rpk）源码在独立仓库 [hrk666666/yeyu-band](https://github.com/hrk666666/yeyu-band)，
