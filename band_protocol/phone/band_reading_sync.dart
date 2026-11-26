@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 import '../library_store.dart';
+import '../shelf_store.dart';
+import '../../models/media_item.dart';
 import 'band_book_remote.dart';
 
 /// 同步方向。与弦电子书手机端的三种模式同名同义：
@@ -81,11 +83,13 @@ class BandReadingSync {
   }
 
   /// 同步一本书。[title] 是手环上的书名（= 传书时用的 filename），
-  /// [bookId] 是手机端书目 id。
+  /// [bookId] 是手机端书目 id。[item] 用于把同步过的书补进手机书架
+  /// （「同步的书双端都必须添加到书架」）。
   Future<BandSyncOutcome> syncBook({
     required String title,
     required String bookId,
     required int chapterCount,
+    MediaItem? item,
     BandSyncMode progressMode = BandSyncMode.auto,
     BandSyncMode timeMode = BandSyncMode.auto,
   }) async {
@@ -94,18 +98,23 @@ class BandReadingSync {
     }
 
     final band = await remote.readingData(title);
-    if (!band.hasProgress &&
-        !band.hasTime &&
-        band.dailySeconds.isEmpty &&
-        band.bookmarks.isEmpty) {
-      // 手环上没有这本书的记录：不是错误，只是没得同步。
-      return BandSyncOutcome(title: title);
-    }
 
     final history = _historyFor(bookId);
     final phoneChapter = (history?['episode'] as num?)?.toInt();
     final phoneOffset = (history?['textOffset'] as num?)?.toInt() ?? 0;
     final phoneDays = _store.readTimeSnapshot()[bookId] ?? const <String, double>{};
+
+    // 两端什么都没有才是「没得同步」。旧实现在手环无记录时直接早退，
+    // 手机→手环方向的推送永远走不到——「双端进度同步完全不可用」的根因。
+    final bandEmpty =
+        !band.hasProgress &&
+        !band.hasTime &&
+        band.dailySeconds.isEmpty &&
+        band.bookmarks.isEmpty;
+    final phoneEmpty = phoneChapter == null && phoneDays.isEmpty;
+    if (bandEmpty && phoneEmpty) {
+      return BandSyncOutcome(title: title);
+    }
 
     var outcome = BandSyncOutcome(
       title: title,
@@ -154,6 +163,7 @@ class BandReadingSync {
         chapterCount: chapterCount,
         textOffset: band.offsetInChapter,
         position: band.scrollOffset,
+        item: item,
       );
       targetChapter = clamped;
       source = 'band';
@@ -181,6 +191,9 @@ class BandReadingSync {
           error: '写入手环进度失败',
         );
       }
+      // 同步的书双端都必须添加到书架：手机侧补架（手环侧由传输/同步
+      // 命令在手环端写入 bookshelf.json，双端并集）。
+      await _ensureShelf(item, bookId: bookId, title: title);
     }
 
     // ---- 阅读时长（按天取较大值）----
@@ -261,6 +274,7 @@ class BandReadingSync {
         title: target.title,
         bookId: target.bookId,
         chapterCount: target.chapterCount,
+        item: target.item,
         progressMode: progressMode,
         timeMode: timeMode,
       );
@@ -287,6 +301,7 @@ class BandReadingSync {
     required int chapterCount,
     required int textOffset,
     required double position,
+    MediaItem? item,
   }) async {
     // 回写必须用历史 box 的真实键（_historyFor 命中时可能与 bookId 不同）。
     final id = history?['id']?.toString() ?? bookId;
@@ -304,6 +319,24 @@ class BandReadingSync {
       'time': DateTime.now().millisecondsSinceEpoch,
     };
     await _store.addHistory(merged);
+    // 同步的书双端都必须添加到书架：手环进度落进手机时同步补架。
+    await _ensureShelf(item, bookId: bookId, title: title);
+  }
+
+  /// 同步过的书必须出现在手机书架上（幂等：已在架则不动）。
+  Future<void> _ensureShelf(MediaItem? item, {required String bookId, required String title}) async {
+    final target = item ??
+        MediaItem(
+          id: bookId,
+          title: title,
+          cover: '',
+          author: '',
+          badge: '',
+          ep: '',
+          kind: 'book',
+        );
+    if (ShelfStore.instance.containsItem(target)) return;
+    await ShelfStore.instance.add(target);
   }
 
   static bool _isAhead({
@@ -335,6 +368,7 @@ class BandSyncTarget {
     required this.title,
     required this.bookId,
     required this.chapterCount,
+    this.item,
   });
 
   /// 手环上的书名。
@@ -343,4 +377,7 @@ class BandSyncTarget {
   /// 手机端书目 id（阅读进度 / 时长按这个键存）。
   final String bookId;
   final int chapterCount;
+
+  /// 对应的书架条目；同步过的书补进手机书架时用。
+  final MediaItem? item;
 }

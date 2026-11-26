@@ -12,6 +12,7 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 手环传书桥（小米穿戴 SDK / xms-wearable）。
@@ -33,6 +34,11 @@ import org.json.JSONObject
  * `tools/band_book/README.md`。
  */
 class BandBookPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
+    companion object {
+        /** 不支持弦协议的机型（对齐弦电子书手机端 unsupportedDevices 名单）。 */
+        private val UNSUPPORTED_DEVICES = listOf("小米手环8")
+    }
+
     private lateinit var context: Context
     private var methods: MethodChannel? = null
     private var events: EventChannel? = null
@@ -76,7 +82,10 @@ class BandBookPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChan
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
-            "connect" -> connect(result)
+            // 连接整条 Task 链套总超时守卫：xms-wearable 的 Task 在部分机型上
+            // 可能永远不回调（对应「有时会连接超时」实际是干等），超时统一报
+            // 「连接超时」而不是让 Dart 侧挂在 await 上。
+            "connect" -> connect(TimeoutResult(result, main, 15_000L))
             "send" -> {
                 val text = call.argument<String>("message")
                 if (text == null) {
@@ -102,6 +111,43 @@ class BandBookPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChan
                     .addOnFailureListener { result.error("check_failed", it.message, null) }
             }
             else -> result.notImplemented()
+        }
+    }
+
+    /**
+     * 带总超时的 Result 守卫：任一 Task 链卡死时按超时回错误，
+     * 只允许一次回包（后到的 success/error 丢弃）。
+     */
+    private class TimeoutResult(
+        private val delegate: MethodChannel.Result,
+        handler: Handler,
+        timeoutMs: Long,
+    ) : MethodChannel.Result {
+        private val done = AtomicBoolean(false)
+        private val timeoutRunnable = Runnable {
+            if (done.compareAndSet(false, true)) {
+                delegate.error(
+                    "connect_timeout",
+                    "连接超时：请确认手环在连接列表、小米运动健康保持后台运行",
+                    null,
+                )
+            }
+        }
+
+        init {
+            handler.postDelayed(timeoutRunnable, timeoutMs)
+        }
+
+        override fun success(result: Any?) {
+            if (done.compareAndSet(false, true)) delegate.success(result)
+        }
+
+        override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
+            if (done.compareAndSet(false, true)) delegate.error(errorCode, errorMessage, errorDetails)
+        }
+
+        override fun notImplemented() {
+            if (done.compareAndSet(false, true)) delegate.notImplemented()
         }
     }
 
@@ -140,14 +186,33 @@ class BandBookPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChan
         Wearable.getNodeApi(context).connectedNodes
             .addOnSuccessListener { nodes ->
                 if (nodes.isNullOrEmpty()) {
-                    result.error("no_device", "未找到已连接的手环，请先用小米运动健康连上手环", null)
+                    result.error(
+                        "no_device",
+                        "未找到已连接的手环：请先打开小米运动健康并连上手环，保持其后台运行",
+                        null,
+                    )
                     return@addOnSuccessListener
                 }
+                // 前置机型检查（对齐弦电子书手机端 unsupportedDevices）：
+                // 小米手环 8 的穿戴通道不支持弦协议，提前明说而不是握手超时。
                 val target = nodes[0]
+                val name = target.name ?: ""
+                if (UNSUPPORTED_DEVICES.any { name.contains(it) }) {
+                    result.error(
+                        "unsupported_device",
+                        "$name 暂不支持手环传书（该机型穿戴通道不支持弦协议）",
+                        null,
+                    )
+                    return@addOnSuccessListener
+                }
                 launchApp(target, result)
             }
             .addOnFailureListener {
-                result.error("node_failed", "读取设备列表失败：请确认已安装小米运动健康并保持后台运行", null)
+                result.error(
+                    "node_failed",
+                    "读取设备列表失败：请确认已安装小米运动健康并保持后台运行",
+                    null,
+                )
             }
     }
 
@@ -207,7 +272,7 @@ class BandBookPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChan
                 if (!installed) {
                     result.error(
                         "app_missing",
-                        "手环上未安装配套的页屿手环端（包名/签名需与本应用一致）",
+                        "手环上未安装配套的页屿手环端：请先安装同签名的配套 rpk（见项目 tools/band_book/README.md）",
                         null,
                     )
                     return@addOnSuccessListener
@@ -223,11 +288,19 @@ class BandBookPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChan
                         }, 300)
                     }
                     .addOnFailureListener { error ->
-                        result.error("launch_failed", "打开手环端失败：${error.message}", null)
+                        result.error(
+                            "launch_failed",
+                            "打开手环端失败：${error.message}。请确认手环屏幕亮起、未在运行其他小程序",
+                            null,
+                        )
                     }
             }
             .addOnFailureListener { error ->
-                result.error("check_failed", "检查手环应用失败：${error.message}", null)
+                result.error(
+                    "check_failed",
+                    "检查手环应用失败：${error.message}。请确认小米运动健康在后台运行、并已在系统设置里授予本应用「读取应用信息」权限",
+                    null,
+                )
             }
     }
 

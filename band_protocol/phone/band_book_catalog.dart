@@ -35,6 +35,17 @@ class BandBookEntry {
 
   /// 手环端书架显示的字数：按中文 UTF-8 三字节估算。
   int get wordCount => bytes ~/ 3;
+
+  /// 同步/传书成功后补进手机书架用（「同步的书双端都必须添加到书架」）。
+  MediaItem toMediaItem() => MediaItem(
+    id: id,
+    title: title,
+    cover: '',
+    author: author,
+    badge: sourceLabel,
+    ep: chapters.length.toString(),
+    kind: 'book',
+  );
 }
 
 /// 扫描本机可传的书：先离线缓存（番茄书架），再本地导入（TXT/EPUB）。

@@ -167,6 +167,17 @@ class BandBookTransfer extends ChangeNotifier {
   /// 「版本不兼容」。我们用 V26.6.0 的编号，兼容当前全部手环端。
   static const int phoneVersion = 260600;
 
+  /// 兼容版本号（dotted a.b.c，可续段）：连接强制要求手机与手环的 a.b
+  /// 一致，c 及以后（机型码、修订号等）不限——版本不匹配的问题由此收敛。
+  /// 手机端固定为 26.6 系列（与手环端 V26.6.1.xxx 同系列）。
+  static const String phoneVersionName = '26.6.1';
+
+  /// 取 a.b（前两段）；用于版本兼容判定。
+  static String majorMinor(String version) {
+    final parts = version.replaceFirst(RegExp(r'^[Vv]'), '').split('.');
+    return parts.take(2).join('.');
+  }
+
   /// 手环端最低可协商版本，与手机侧 `MIN_BAND_VERSION_CODE` 一致。
   static const int minBandVersion = 251231;
 
@@ -204,6 +215,10 @@ class BandBookTransfer extends ChangeNotifier {
   bool _sending = false;
   bool _cancelled = false;
   int _bandVersion = 0;
+  String? _bandVersionName;
+
+  /// 手环端回报的 dotted 版本名（诊断用）。
+  String? get bandVersionName => _bandVersionName;
 
   /// 单飞握手：并发发送共用同一次握手，避免两端互刷 count。
   Completer<void>? _handshake;
@@ -228,6 +243,11 @@ class BandBookTransfer extends ChangeNotifier {
   /// 通用命令（查进度 / 读数据 / 存储 / 设置 / 删除）的在途请求。
   /// 手环端这些命令的回包没有请求 id，按注册顺序 FIFO 匹配。
   final List<_PendingCommand> _pending = <_PendingCommand>[];
+
+  /// 命令互斥：手环端回包没有请求 id，两条命令并发在途时回包无法归属。
+  /// 所有 `command()` / `fetchStatus()` 经这条 future 链排队串行执行
+  /// （对齐弦电子书手机端 `InterconnetFile` 的 `mutex.withLock`）。
+  Future<void> _cmdChain = Future<void>.value();
 
   final Map<int, String> _bodies = <int, String>{};
   final Map<int, Future<String>> _inflight = <int, Future<String>>{};
@@ -336,7 +356,10 @@ class BandBookTransfer extends ChangeNotifier {
       if (!completer.isCompleted) {
         completer.future.ignore();
         completer.completeError(
-          const BandBookException('握手超时：请确认手环上已打开弦电子书，且小米运动健康保持后台运行'),
+          const BandBookException(
+            '握手超时：请确认手环上已打开配套手环端、小米运动健康保持后台运行'
+            '（若手环弹出「版本不兼容」，请安装与手机 a.b 一致的配套版本）',
+          ),
         );
       }
     });
@@ -346,6 +369,7 @@ class BandBookTransfer extends ChangeNotifier {
             'tag': _handshakeTag,
             'count': 0,
             'version': phoneVersion,
+            'versionName': phoneVersionName,
           })
           .catchError((Object error) {
             if (identical(_handshake, completer)) _handshake = null;
@@ -369,9 +393,17 @@ class BandBookTransfer extends ChangeNotifier {
   }
 
   /// 出站底层：顺带重置保活计数。
+  ///
+  /// 套 10s 发送超时：xms-wearable 的 sendMessage Task 在链路异常时可能
+  /// 永不回调，`await _transmit` 会把命令/分片全堵死（8s 命令超时只保护
+  /// 回包等待，不保护发送本身）。
   Future<void> _transmit(Map<String, dynamic> message) {
     _idleTicks = 0;
-    return _link.send(message);
+    return _link.send(message).timeout(
+      const Duration(seconds: 10),
+      onTimeout: () =>
+          throw const BandBookException('消息发送超时：手环可能已失联'),
+    );
   }
 
   /// 所有业务出站消息的统一入口：先保证握手，再把平台异常翻译成链路失效。
@@ -396,6 +428,8 @@ class BandBookTransfer extends ChangeNotifier {
       }
       _idleTicks += 1;
       if (_idleTicks < _keepAliveTicks) return;
+      // 有在途业务命令时跳过保活，避免保活回包与业务回包在 FIFO 队列中错配。
+      if (_pending.isNotEmpty) return;
       unawaited(
         _transmit({'tag': _fileTag, 'stat': 'get_storage_info'}).catchError((Object _) {}),
       );
@@ -423,6 +457,24 @@ class BandBookTransfer extends ChangeNotifier {
     // 通用命令优先匹配：这些回包（sync_reading_data / settings_data /
     // storage_info / success…）只属于命令，不会与传书流程消息撞车。
     if (_pending.isNotEmpty) {
+      // 先按 accepts 精确匹配（error 也可能是某条命令的应答，例如
+      // get_reading_data 的 accepts 显式接收 error）；只有没有任何命令
+      // 认领该 error 时才按 FIFO 给队首——避免保活/杂音 error 错杀队首。
+      for (var i = 0; i < _pending.length; i++) {
+        if (_pending[i].accepts(message)) {
+          final hit = _pending.removeAt(i);
+          if (type == 'error') {
+            hit.finish(
+              error: BandBookException(
+                message['message']?.toString() ?? '手环端执行失败',
+              ),
+            );
+          } else {
+            hit.finish(result: message);
+          }
+          return;
+        }
+      }
       if (type == 'error') {
         final failed = _pending.removeAt(0);
         failed.finish(
@@ -431,13 +483,6 @@ class BandBookTransfer extends ChangeNotifier {
           ),
         );
         return;
-      }
-      for (var i = 0; i < _pending.length; i++) {
-        if (_pending[i].accepts(message)) {
-          final hit = _pending.removeAt(i);
-          hit.finish(result: message);
-          return;
-        }
       }
     }
     switch (type) {
@@ -498,9 +543,45 @@ class BandBookTransfer extends ChangeNotifier {
   void _onHandshake(Map<String, dynamic> message) {
     final count = (message['count'] as num?)?.toInt() ?? 0;
     final version = (message['version'] as num?)?.toInt();
+    final bandVersionName = message['versionName']?.toString();
+    if (bandVersionName != null && bandVersionName.isNotEmpty) {
+      _bandVersionName = bandVersionName;
+    }
     if (version != null && version > 0) {
       _bandVersion = version;
     }
+
+    // 版本规则：a.b.c（可续段），强制 a.b 一致，c 及以后不限。
+    if (bandVersionName != null && bandVersionName.isNotEmpty) {
+      if (majorMinor(bandVersionName) != majorMinor(phoneVersionName)) {
+        final pending = _handshake;
+        _handshake = null;
+        _connected = false;
+        if (pending != null && !pending.isCompleted) {
+          pending.future.ignore();
+          pending.completeError(
+            BandBookException(
+              '版本不兼容：手机 $phoneVersionName ↔ 手环 $bandVersionName'
+              '（a.b 必须一致，请安装配套手环端）',
+            ),
+          );
+        }
+        return;
+      }
+    } else if (version != null && version > 0 && version < minBandVersion) {
+      // 旧手环端（不回 versionName）：数值版本兜底检查。
+      final pending = _handshake;
+      _handshake = null;
+      _connected = false;
+      if (pending != null && !pending.isCompleted) {
+        pending.future.ignore();
+        pending.completeError(
+          BandBookException('手环端版本过低（$version < $minBandVersion），请更新手环端'),
+        );
+      }
+      return;
+    }
+
     if (count > 0) {
       _markConnected();
       if (!_sending &&
@@ -524,6 +605,7 @@ class BandBookTransfer extends ChangeNotifier {
           'tag': _handshakeTag,
           'count': next,
           'version': phoneVersion,
+          'versionName': phoneVersionName,
         }).catchError((Object _) {}),
       );
     }
@@ -540,7 +622,12 @@ class BandBookTransfer extends ChangeNotifier {
     if (_sending) return;
     _handshakedReset();
     if (!reuse) {
-      _set(const BandTransferState(phase: BandTransferPhase.connecting));
+      _set(
+        const BandTransferState(
+          phase: BandTransferPhase.connecting,
+          label: '正在查找手环（请确保小米运动健康后台运行）…',
+        ),
+      );
     }
     try {
       final device = await _link.connect();
@@ -549,7 +636,7 @@ class BandBookTransfer extends ChangeNotifier {
           BandTransferState(
             phase: BandTransferPhase.handshaking,
             device: device,
-            label: '握手',
+            label: '${device.name}：正在打开手环端并握手…',
           ),
         );
       }
@@ -598,20 +685,30 @@ class BandBookTransfer extends ChangeNotifier {
   }
 
   /// 查询手环上这本书的既有进度（增量同步的依据）。
-  Future<BandBookStatus> fetchStatus(String title) async {
-    if (_sending) return BandBookStatus.empty;
-    try {
-      await _ensureConnected();
-      final wait = _statusWait = Completer<BandBookStatus>();
-      await _send({'tag': _fileTag, 'stat': 'get_book_status', 'filename': title});
-      return await wait.future.timeout(_statusTimeout);
-    } on TimeoutException {
-      return BandBookStatus.empty;
-    } catch (_) {
-      return BandBookStatus.empty;
-    } finally {
-      _statusWait = null;
-    }
+  Future<BandBookStatus> fetchStatus(String title) {
+    return _serialize(() async {
+      if (_sending) return BandBookStatus.empty;
+      try {
+        await _ensureConnected();
+        final wait = _statusWait = Completer<BandBookStatus>();
+        await _send({'tag': _fileTag, 'stat': 'get_book_status', 'filename': title});
+        return await wait.future.timeout(_statusTimeout);
+      } on TimeoutException {
+        return BandBookStatus.empty;
+      } catch (_) {
+        return BandBookStatus.empty;
+      } finally {
+        _statusWait = null;
+      }
+    });
+  }
+
+  /// 把一次命令放进串行队列（同一时刻只允许一条命令在途）。
+  Future<T> _serialize<T>(Future<T> Function() action) {
+    final result = _cmdChain.then((_) => action());
+    // 链本身吞掉错误：上一条命令失败不该堵死后续命令。
+    _cmdChain = result.then<void>((_) {}, onError: (_) {});
+    return result;
   }
 
   /// 通用命令：发一条 `stat` 指令并等待手环回包。
@@ -623,30 +720,32 @@ class BandBookTransfer extends ChangeNotifier {
     required bool Function(Map<String, dynamic> message) accepts,
     Duration timeout = const Duration(seconds: 10),
     bool tolerateTimeout = false,
-  }) async {
-    if (_sending) {
-      throw const BandBookException('传输进行中，请稍后再试');
-    }
-    await _ensureConnected();
-    final pending = _PendingCommand(accepts);
-    _pending.add(pending);
-    pending.timer = Timer(timeout, () {
-      if (pending.completer.isCompleted) return;
-      _pending.remove(pending);
-      pending.completer.completeError(
-        BandBookException('手环未响应：${payload['stat']}'),
-      );
+  }) {
+    return _serialize(() async {
+      if (_sending) {
+        throw const BandBookException('传输进行中，请稍后再试');
+      }
+      await _ensureConnected();
+      final pending = _PendingCommand(accepts);
+      _pending.add(pending);
+      pending.timer = Timer(timeout, () {
+        if (pending.completer.isCompleted) return;
+        _pending.remove(pending);
+        pending.completer.completeError(
+          BandBookException('手环未响应：${payload['stat']}'),
+        );
+      });
+      try {
+        await _transmit({'tag': _fileTag, ...payload});
+        return await pending.completer.future;
+      } on BandBookException {
+        if (tolerateTimeout) return const <String, dynamic>{};
+        rethrow;
+      } finally {
+        pending.timer?.cancel();
+        _pending.remove(pending);
+      }
     });
-    try {
-      await _transmit({'tag': _fileTag, ...payload});
-      return await pending.completer.future;
-    } on BandBookException {
-      if (tolerateTimeout) return const <String, dynamic>{};
-      rethrow;
-    } finally {
-      pending.timer?.cancel();
-      _pending.remove(pending);
-    }
   }
 
   /// 推书。[chapters] 为要传的绝对章节索引子集，null 表示整本。

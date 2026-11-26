@@ -306,10 +306,11 @@ class BandBookRemote implements BandReadingPort {
         accepts: (message) => message['type'] == 'storage_info',
         timeout: const Duration(seconds: 8),
         tolerateTimeout: soft,
-      );
+      ).timeout(const Duration(seconds: 15));
       if (reply.isEmpty) return BandStorageInfo.empty;
       return BandStorageInfo.fromMessage(reply);
-    } on BandBookException {
+    } catch (_) {
+      // 任何异常（含超时、解析失败）都不能外泄：上层 UI 靠它收「读取中」状态。
       if (soft) return BandStorageInfo.empty;
       rethrow;
     }

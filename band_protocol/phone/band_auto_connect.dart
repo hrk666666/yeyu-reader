@@ -99,6 +99,7 @@ class BandAutoConnect {
           title: entry.title,
           bookId: entry.id,
           chapterCount: entry.chapters.length,
+          item: entry.toMediaItem(),
         ),
     ];
     final transfer = BandBookTransfer.shared;
