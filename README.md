@@ -7,12 +7,14 @@
 <p align="center">不用注册 · 不用付费 · 打开就能看</p>
 
 <p align="center">
-  <a href="https://github.com/hrk666666/shijinpu/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/hrk666666/shijinpu?color=EF5038&label=Release&logo=github"></a> <a href="https://github.com/hrk666666/shijinpu/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/hrk666666/shijinpu/total?color=14B8A6&label=Downloads&logo=github"></a> <img alt="Platform" src="https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android&logoColor=white"> <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-blue"></a> <a href="https://github.com/hrk666666/shijinpu/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/hrk666666/shijinpu?style=social"></a>
+  <img alt="Platform" src="https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android&logoColor=white"> <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-blue"></a> <a href="https://github.com/hrk666666/yeyu-reader/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/hrk666666/yeyu-reader?style=social"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/hrk666666/shijinpu/releases/latest"><img alt="下载 APK" height="40" src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-APK-3DDC84?style=for-the-badge&logo=android&logoColor=white"></a>
+  <a href="https://pan.quark.cn/s/10d1e8548b36"><img alt="下载 APK" height="40" src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-APK-3DDC84?style=for-the-badge&logo=android&logoColor=white"></a>
 </p>
+
+本仓是**页屿手机端的完整源码仓**：客户端、Rust 内核、平台工程、手环协议与测试全部在内，构建得出与发行版一致的 App。
 
 所有内容实时从网上获取，App 本身不存任何内容。
 
@@ -29,6 +31,8 @@
 - **🕘 记住进度** —— 看到哪自动记，下次接着看
 - **⬇️ 下载离线** —— 整本下载后彻底离线，不会被自动清掉
 - **📦 导出 EPUB** —— 整本打包成带封面与完整元数据的 EPUB 3，任何阅读器都能打开
+- **⌚ 传到手环** —— 蓝牙把书架里的书推到小米手环 / 手表，页屿手环端直接打开读
+- **🧩 安装包工具** —— 导入手环端 rpk，改包名重签后与原版共存，可存到下载目录或直接分享
 
 ## 相对上游的改动
 
@@ -77,6 +81,22 @@
 ### 平台通道
 
 `fqapp/downloads` 新增 `saveBytes`：EPUB 以二进制写入 `MediaStore.Downloads`（Android 10+ 无需存储权限），旧版本落到应用外部目录并如实回报 `public=false`。
+
+## 仓库结构
+
+| 路径 | 内容 |
+| --- | --- |
+| `lib/` | Flutter 客户端全量代码：阅读器、播放器、漫画、书架、设置、手环传书、安装包工具 |
+| `rust/` | Rust 内核（flutter_rust_bridge 桥接、视频解析、内容抓取端点） |
+| `native/` | C 层加密库源码 |
+| `android/` `ios/` `windows/` | 三端平台工程，含 `fqapp/downloads` 与 `SharePlugin` 通道 |
+| `band_protocol/` | 手环端通信协议：协议文档、Kotlin 通道、Flutter 侧实现，以及 `rpk_resign/`（纯 Dart 的 rpk 改包名重签） |
+| `test/` | 单元与组件测试，含 rpk 重签自检、MD3 主题断言 |
+| `assets/` | 内置字体与品牌图 |
+| `scripts/` `tools/` | 构建脚本与命令行工具（`rpk_repack_check.dart` 可脱离 App 改包名） |
+| `update.json` | 应用内更新与公告的数据源 |
+
+不入库：签名材料（`key.properties`、`*.jks`、`*.keystore`）、`docs/`、构建产物（`build/`、`target/`）。
 
 ## 怎么用
 
@@ -135,7 +155,7 @@
 
 一个人维护精力有限，欢迎提 issue、发 PR，修个小问题、补个功能都行，我都会看。参与方式见 [如何反馈](CONTRIBUTING.md)。
 
-<a href="https://github.com/hrk666666/shijinpu/graphs/contributors">
+<a href="https://github.com/hrk666666/yeyu-reader/graphs/contributors">
   <img src=".github/contributors.svg" alt="贡献者">
 </a>
 
@@ -143,4 +163,4 @@
 
 **电脑版** [Windows 桌面版](WINDOWS.md) ｜ **开发者** [编译与开发](DEVELOPMENT.md) ｜ [如何反馈](CONTRIBUTING.md) ｜ **许可** [GPL-3.0](LICENSE)，Copyright (C) 2026 ch6vip ｜ **致谢** [LINUX DO](https://linux.do/)
 
-<a href="https://www.star-history.com/?repos=hrk666666%2Fshijinpu&type=date&legend=top-left"><picture><source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=hrk666666/shijinpu&type=date&theme=dark&legend=top-left" /><source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=hrk666666/shijinpu&type=date&legend=top-left" /><img alt="Star History" src="https://api.star-history.com/chart?repos=hrk666666/shijinpu&type=date&legend=top-left" /></picture></a>
+<a href="https://www.star-history.com/?repos=hrk666666%2Fyeyu-reader&type=date&legend=top-left"><picture><source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=hrk666666/yeyu-reader&type=date&theme=dark&legend=top-left" /><source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=hrk666666/yeyu-reader&type=date&legend=top-left" /><img alt="Star History" src="https://api.star-history.com/chart?repos=hrk666666/yeyu-reader&type=date&legend=top-left" /></picture></a>
