@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  明文流量策略。
+
+  原来是「只放行 127.0.0.1 / localhost，上游一律 HTTPS」。现在放开明文，
+  原因是阅读进度同步（kosync）的服务器绝大多数是用户自己在局域网里起的
+  koreader-sync-server，地址形如 http://192.168.1.10:7200 —— 系统默认的
+  「只允许 HTTPS」会直接把这些连接拦掉，同步功能等于不可用，而这类自建
+  服务没有任何证书可发。
+
+  上游接口与 CDN 的地址在代码里写死，全部是 https://，客户端不会用明文
+  访问它们；放开的只是用户自填的同步服务器地址这一条路径。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

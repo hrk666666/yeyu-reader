@@ -1,150 +1,146 @@
-# 页屿 · Yeyu Reader
+<p align="center">
+  <img src="assets/images/app_logo.webp" width="100" alt="页屿">
+</p>
 
-小说阅读器 **页屿**（Yeyu Reader，Android / Flutter，包名 `com.yeyu.reader`）的开源组件仓：
-更新检查 / 公告机制（`update.json`）与手环传书协议及双端源码（`band_protocol/`）。
-开发者 **hrk_**。
+<h1 align="center">页屿 (Yeyu Reader) · 看小说、短剧、漫画的手机 App</h1>
 
-> **先读 [许可与来源声明](#许可与来源声明必读) 与 [非从属关系声明](#非从属关系声明)。**
-> 本项目是独立的个人学习研究作品，与任何商业实体及上游项目作者无隶属、授权或合作关系。
+<p align="center">不用注册 · 不用付费 · 打开就能看</p>
 
----
+<p align="center">
+  <a href="https://github.com/hrk666666/shijinpu/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/hrk666666/shijinpu?color=EF5038&label=Release&logo=github"></a> <a href="https://github.com/hrk666666/shijinpu/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/hrk666666/shijinpu/total?color=14B8A6&label=Downloads&logo=github"></a> <img alt="Platform" src="https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android&logoColor=white"> <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-blue"></a> <a href="https://github.com/hrk666666/shijinpu/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/hrk666666/shijinpu?style=social"></a>
+</p>
 
-## 许可与来源声明（必读）
+<p align="center">
+  <a href="https://github.com/hrk666666/shijinpu/releases/latest"><img alt="下载 APK" height="40" src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-APK-3DDC84?style=for-the-badge&logo=android&logoColor=white"></a>
+</p>
 
-### 许可
+所有内容实时从网上获取，App 本身不存任何内容。
 
-本项目**手机端与手环端统一以 [GNU AGPL-3.0](LICENSE) 发布**（下称 AGPL-3.0）：
+> [!WARNING]
+> 仅供学习研究，不提供、不存放任何内容。内容来自第三方公开接口，版权归原作者所有。使用后果自负，如有侵权请联系删除。
 
-- 手机端主体衍生自 **fqapp 1.4.0**（[ch6vip/fqapp](https://github.com/ch6vip/fqapp)，**GPL-3.0**）；
-- 手环端与通信协议实现衍生自 **moye 弦电子书**（[youshen2/com.bandbbs.ebook](https://github.com/youshen2/com.bandbbs.ebook)，**AGPL-3.0**）。
-- 按 GPL-3.0 第 13 条，GPL-3.0 代码可以合法并入 AGPL-3.0 作品，合并后的作品按 AGPL-3.0 授权。
-  因此双端**向下兼容地统一为 AGPL-3.0**，两端原始版权与许可声明均完整保留，不删除、不替换。
-- 本仓前代「什锦铺 Web 套件」（`fetcher/` `web/` `android/`）原以 MIT 发布，现由版权人 hrk_
-  一并改以 AGPL-3.0 授权，使全仓许可口径统一。
+## 能做什么
 
-**分发义务（AGPL-3.0）**：对外分发本项目任何部分（含手环 rpk 二进制）时，必须一并提供对应
-源码与修改说明，并同样以 AGPL-3.0 授权。仅个人本地使用不触发网络服务条款。
+- **📖 看小说** —— 左右翻页或上下滑动，字号字体随意调，有段落评论
+- **🎧 听书** —— 机器朗读和真人讲书，有人声字幕、定时关闭、倍速、自动下一章
+- **🎬 看短剧 / 漫剧** —— 播完自动下一集，能快进快退、调倍速、全屏
+- **🖼 看漫画** —— 竖着往下滑，缓存过的断网也能看
+- **🔍 找内容** —— 搜关键词或编号，有排行榜、作者主页、书评
+- **🕘 记住进度** —— 看到哪自动记，下次接着看
+- **⬇️ 下载离线** —— 整本下载后彻底离线，不会被自动清掉
+- **📦 导出 EPUB** —— 整本打包成带封面与完整元数据的 EPUB 3，任何阅读器都能打开
 
-### 来源与修改清单（这是什么改的）
+## 相对上游的改动
 
-| 部分 | 来源 | 上游许可 | 本项目所做的修改 |
-| --- | --- | --- | --- |
-| 手机端 App（页屿） | ch6vip/fqapp 1.4.0 | GPL-3.0（并入后随 AGPL-3.0） | 界面全面迁移 Material Design 3；EPUB 元数据与批量导出、缓存/书架整理；接入手环传书（协议移植自弦电子书）；手环进度双向同步；品牌改名「页屿 / Yeyu Reader」、包名 `com.ch6vip.fqapp` → `com.yeyu.reader`、更换图标；`update.json` 更新检查/公告与镜像测速优选；启动静默连手环；移除爱发电入口；署名 hrk_ |
-| 手环端 rpk | youshen2/com.bandbbs.ebook（弦电子书） | AGPL-3.0 | 包名改为 `com.yeyu.reader`、应用名「页屿」、更换图标（小米穿戴 SDK 硬约束：与手机端同包名同签名）；`/pages/push` 接收页对接页屿协议（握手/分片/命令集/进度同步）；按 o66 / n67 / band / rw / p67 / o62 六机型分支维护（`designWidth` 适配） |
-| 手环协议与安卓桥 | 弦电子书双端通信 / 重连逻辑 | AGPL-3.0 | 文档化为 [PROTOCOL.md](band_protocol/PROTOCOL.md)；固化 10KB 分片流控、看门狗/保活、增量传书、进度取更远端/时长按天取 max/书签并集等同步语义 |
-| 遗留 Web 套件 `fetcher/` `web/` `android/` | 自研 | AGPL-3.0（原 MIT） | 纯 Web MD3 阅读器 + WebView 套壳 + EPUB 3 抓取打包；信息架构参照 fqapp；现行 App 已改用 Flutter，此部分仅存档 |
+对照 [ch6vip/fqapp](https://github.com/ch6vip/fqapp) `master`：
 
-界面排版另参考 [Wenku8 Flutter](https://github.com/ccdatw/Wenku8Flutter)（致谢，许可文本见 App 内「开源许可」）。
-内容数据来自番茄小说公开接口，非本项目授权内容。
+### Material Design 3 视觉改造
 
-## 非从属关系声明
+技术栈不变（仍是 Flutter + Rust 内核），但 UI 全部换成官方 MD3。规范数值不自己抄，一律委托 Flutter SDK 的官方常量 / 组件。
 
-本项目为独立的个人学习研究作品，与下列各方**无任何隶属、授权、合作、背书或官方关系**：
-小米科技 / 华米（Xiaomi、REDMI、VelaOS、小米手环、REDMI Watch、小米手表、小米运动健康、
-小米穿戴 SDK 等名称与商标归各自所有者）、番茄小说及其所属公司、fqapp 原作者 ch6vip、
-弦电子书作者 youshen2、Wenku8 Flutter 作者。
-
-提及第三方名称**仅用于**说明技术来源、兼容对象与事实性引用。上游项目对本项目不承担任何
-责任，本项目亦不代表上游项目的立场或承诺任何担保。
-
-## 免责声明（风险提示）
-
-- 本项目仅供**个人学习与技术研究**（HTTP 协议、加密链路、EPUB 规范、可穿戴通信等）使用。
-- 抓取与展示的内容版权归原作者及平台所有；**请勿传播、商用或二次分发**。如有侵权，联系即删。
-- 使用修改版客户端、安装第三方手环 rpk、访问非官方接口均存在账号、设备与稳定性风险，
-  **一切后果由使用者自行承担**。
-- 本项目按「现状」提供，不附带任何明示或默示担保（适销性、特定用途适用性等）。
-- 在法律允许的最大范围内，开发者对因使用本项目造成的任何损失不承担责任。
-
----
-
-## 本仓内容
-
-| 路径 | 内容 |
+| 维度 | 实现 |
 | --- | --- |
-| [`update.json`](update.json) | App 启动拉取的**更新检查 / 公告**单文件，字段说明见 [update.json.README.md](update.json.README.md) |
-| [`band_protocol/`](band_protocol/) | 手环传书**协议**（[PROTOCOL.md](band_protocol/PROTOCOL.md)）与双端源码：`phone/` 手机侧 Dart、`kotlin/` Android 桥（小米穿戴 SDK）、`rpk_resign/` rpk 改包名与重签（纯 Dart，让官方版与内置书版共存） |
-| `fetcher/` `web/` `android/` | 遗留「什锦铺」Web 套件（存档，见文末） |
+| 配色 | 全 App 单一源头 `ColorScheme.fromSeed(seedColor: #EF5038)`。浅 / 深两套官方 tonal palette；`surface` / `surfaceContainer*` / `onSurfaceVariant` / `outlineVariant` 等 role 全程使用，不再手写色板 |
+| 组件主题 | `AppBar`（surfaceTint + 滚动后 level2 elevation + 标题左对齐）、`Card`（12dp / level1）、`Dialog`（28dp / surfaceContainerHigh）、`BottomSheet`（28dp 顶圆角 + 官方 drag handle 32×4）、`SnackBar`（inverseSurface）、`NavigationBar`（80dp + secondaryContainer 胶囊 indicator）、Filled/Outlined/Text/IconButton、FAB、SegmentedButton、Chip、Badge、Tooltip、ProgressIndicator 全部按官方 `*ThemeData` 配置 |
+| 动效 | 直接引用 SDK 的 `Easing`（emphasizedDecelerate = `Cubic(0.05,0.7,0.1,1.0)`）与 `Durations`（short1–extralong4）。**不覆盖** `pageTransitionsTheme`，用 Flutter 官方默认转场（Android 3.38+ 为 PredictiveBack / FadeForwards，450ms）；另提供 `Md3SharedAxisPageRoute` 与 `Md3FadeThroughPageRoute` |
+| 形状 / 高度 / 状态层 | `lib/theme/md3.dart`：`Md3Shape`(4/8/12/16/28)、`Md3Elevation`(0/1/3/6/8/12)、`Md3State`(hover .08 / pressed .10 / dragged .16)、`Md3Dimens`(48dp 触摸目标…) |
+| 响应式 | `Md3WindowSizeClass` 按官方 600 / 840 / 1200 / 1600 断点；compact→NavigationBar、medium/expanded→NavigationRail、large→NavigationDrawer（`Md3AdaptiveNavigation`） |
+| 导航 | 自研液态玻璃 `GlassDock` → 官方 `NavigationBar`（Material Symbols 图标、官方 state layer、重复选中当前目的地用 `standardDecelerate` + medium2 滚回顶部） |
+| 去玻璃拟态 | `WenkuScope` 不再重建一套单色 ThemeData，改为复用全局官方主题、只注入 `ThemeExtension`；`LiquidGlassLens` / `GlassAppearance` / 档案纸色板统一到 `surfaceContainer*` + `surfaceTint` 分层 |
+| 交互 | 按压反馈交给官方 `InkWell` state layer，删除自研弹簧缩放；信息层级用官方 `Typography.material2021` typescale |
 
-手环端（VelaOS 快应用 rpk）源码在独立仓库 [hrk666666/yeyu-band](https://github.com/hrk666666/yeyu-band)，
-按 o66 / n67 / band / rw / p67 / o62 六机型分支维护，同样以 AGPL-3.0 发布。
+**保留的例外**（都是显式语义色，不是自研视觉）：阅读器纸张预设、封面动态取色（官方 `ColorScheme.fromImageProvider` 思路）、视频 / 漫画画布、以及墨水屏纯黑白与 OLED 纯黑两个可访问性变体。
 
-## 更新检查与下载
+`test/md3_theme_test.dart` 把「官方」做成可验证断言：配色确实来自 `fromSeed`、动效绑定 SDK `Easing`/`Durations`、断点与形状数值、主导航确实是 `NavigationBar`。
 
-App 启动时拉取本仓 `update.json`（设置可关），拉取走 GitHub 镜像测速优选（并发探测、先回先赢，
-可在设置手动钉死镜像）。有新版时**不从 GitHub 下载 APK**，而是引导用户跳转 `latest.url` ——
-该链接在 update.json 里**自定义**（网盘 / 落地页皆可，由发布者配置）。
+### EPUB 3 导出
 
-**本仓不发 GitHub Release。** 安装包请以 `latest.url` 指向的自定义链接为准。
+入口在「离线缓存」页每本书的书本按钮。整本重新取文，装配成单个 `.epub` 写进系统「下载」。
 
-## 协议
+- **元数据**：Dublin Core 全字段 + schema.org（`ratingValue` / `ratingCount` / `wordCount`）+ 自定义 `fq:` 命名空间（`serialStatus` / `lastUpdated` / `readCount` / `shelfCount`）+ `belongs-to-collection`
+- **封面**：按魔数嗅探 jpg / png / webp / gif（上游常把 WebP 挂在 `.jpg` 名下），登记 `properties="cover-image"`，同时保留 EPUB 2 的 `<meta name="cover">`
+- **书名页**：封面缩略图、事实表（分类 / 状态 / 评分 / 字数 / 章节 / 在读 / 收藏 / 出版 / 首发 / 更新 / 原名 / 角色）、标签胶囊、完整简介、版权说明
+- **结构**：`mimetype` 首位且不压缩；`nav.xhtml`（含 landmarks）与 `toc.ncx` 双目录；章节页把「第 N 章」拆成独立行
+- **标识**：`uuid5(NAMESPACE_URL, "fanqie:<book_id>")`，与批量工具产出的同一本书共用同一 UUID
 
-手环与手机之间按 [`band_protocol/PROTOCOL.md`](band_protocol/PROTOCOL.md) 传递：`__hs__` 三段握手、
-10KB 分片与流控、文件命令集（传书 / 删书 / 章节目录 / 存储查询）、阅读进度与阅读时长双向同步。
-SDK 硬约束：手机 APK 与手环 rpk 须**同包名同签名**。
+零计数的字段（在读 0、收藏 0）直接省略，不写成 `0 人在读`；评分上游给 0–100 刻度时折算到 0–10，给 0 视为无评分。
+
+### 整本下载改批量取文
+
+`/api/v1/chapters/full` 一次 CM/DH 握手解密整批（上游上限 3000 章，客户端按 80 章一批）：
+
+- 400 章的书从 400 次往返变成 5 次
+- 整批失败按二分拆半重试，单章仍失败才回退 `/chapters/{id}`
+- 缺章（下架 / 锁章 / 解密失败）只影响那一章，不拖垮整批
+- 缓存写入、断点续传、`pinned` 保护、插图刷新判定全部保持原样
+
+### 平台通道
+
+`fqapp/downloads` 新增 `saveBytes`：EPUB 以二进制写入 `MediaStore.Downloads`（Android 10+ 无需存储权限），旧版本落到应用外部目录并如实回报 `public=false`。
+
+## 怎么用
+
+**找内容** —— 首页推荐各类内容，下拉刷新换一批。想找特定的就点搜索，输关键词或作品编号。
+
+**看小说** —— 点屏幕中间呼出菜单，调目录、排版、缓存。翻过本章最后一页自动进下一章。
+
+**滚动跨章** ——「阅读菜单 → 设置 → 翻页」选中滚动后，下方显示「跨章」选项，默认用分割线拼接相邻章节，也可直接切换下一章。拼接模式提前准备正文与段评排版，按实际读到的章节保存进度。
+
+**正文替换** ——「设置 → 阅读 → 正文替换」添加普通文本或正则规则，按顺序在本地处理正文；默认关闭，关闭后显示原文。系统朗读也会使用替换后的文字，真人音频保持原样；规则暂不包含在备份中。
+
+**听书** —— 声音可选，进度会记住。切到别的页面还能接着听，底部有控制条，支持通知栏和锁屏控制。
+
+**播放页布局** ——「设置 → 外观 → 播放页布局」可选沉浸式、横屏片源自动分屏、始终分屏；分屏时竖屏上下、横屏左右，拖动分隔条调比例、点一下收起。
+
+**下载离线** —— 详情页点「下载」存整本；阅读器点「缓存」批量下载后面几十章。手动下载的不会被自动清理。
+
+## 常见问题
+
+<details><summary><b>打开后一直卡在初始化？</b></summary>
+
+第一次打开必须联网完成设备注册，检查网络再重试。
+
+</details>
+
+<details><summary><b>正文乱码 / 视频放不出来？</b></summary>
+
+一般是设备信息过期。清除应用数据后重开会自动重新注册。
+
+> [!CAUTION]
+> 清除应用数据会同时删掉阅读记录和缓存。
+
+</details>
+
+<details><summary><b>搜索或播放突然失败？</b></summary>
+
+内容都来自上游网站，对方调整或网络波动都会临时影响，过会儿再试。这个 App 没有自己的服务器，没法绕过上游的变化。
+
+</details>
+
+<details><summary><b>换手机怎么搬书架和进度？</b></summary>
+
+「设置 → 数据 → 备份与恢复」导出文件，传到新手机后选文件、确认合并。
+
+能搬：收藏、阅读和播放进度、看过哪些剧集。搬不了：本地 TXT/EPUB 文件、下载缓存、阅读时长、划线和设置。
+
+</details>
+
+<details><summary><b>需要注册或付费吗？有 iOS 版吗？</b></summary>
+
+不用注册也不用付费，App 里没有任何登录和支付功能。没有 iOS 版，目前只有安卓。
+
+</details>
+
+## 参与贡献
+
+一个人维护精力有限，欢迎提 issue、发 PR，修个小问题、补个功能都行，我都会看。参与方式见 [如何反馈](CONTRIBUTING.md)。
+
+<a href="https://github.com/hrk666666/shijinpu/graphs/contributors">
+  <img src=".github/contributors.svg" alt="贡献者">
+</a>
 
 ---
 
-## 附：什锦铺 Web 套件（遗留）
+**电脑版** [Windows 桌面版](WINDOWS.md) ｜ **开发者** [编译与开发](DEVELOPMENT.md) ｜ [如何反馈](CONTRIBUTING.md) ｜ **许可** [GPL-3.0](LICENSE)，Copyright (C) 2026 ch6vip ｜ **致谢** [LINUX DO](https://linux.do/)
 
-`fetcher/` `web/` `android/` 是前代「什锦铺」的纯 Web 重写版：把 fqapp 的页面层级与信息架构，
-用**纯 Web 重写为 Material Design 3** 的可交互阅读器，并封装成离线可用的 Android 应用。
-现行页屿 App 已改用 Flutter 原生实现，本部分仅作存档。
-
-不发一个 HTTP 请求，不起一个本地服务器 —— 发行版是单个 IIFE + 脚本注入的正文，`file://` 直接可用。
-
-```
-┌──────────────────────────────────────────────────────────┐
-│  fetcher/        Python 抓取与 EPUB 3 打包                │
-│      ↓  产出书库 JSON + 封面 + 正文                       │
-│  web/            MD3 前端（HTML/CSS/JS，零框架）           │
-│      ↓  build.py 打包成 dist/                            │
-│  android/        WebView 套壳，assets/ 内嵌全部资源        │
-└──────────────────────────────────────────────────────────┘
-```
-
-| 目录 | 内容 | 技术栈 |
-| --- | --- | --- |
-| [`fetcher/`](fetcher/) | 批量发现 → 抓取 → 生成带完整元数据与封面的 EPUB 3 | Python 3，无第三方依赖 |
-| [`web/`](web/) | Material 3 界面、路由栈、阅读器、书架、取色主题 | 原生 HTML/CSS/JS + esbuild |
-| [`android/`](android/) | 单 Activity + 单 WebView 套壳，`WebViewAssetLoader` | Java 17 / AGP 8.7 / SDK 34 |
-
-### 快速开始（遗留套件）
-
-**跑前端**
-
-```bash
-cd web
-npm i -D esbuild        # 仅打包需要
-python3 build.py        # 产出 dist/
-open dist/index.html    # 双击即开
-```
-
-**构建 Android**
-
-```bash
-cd android
-cp /path/to/your.jks app/release.jks     # 或在 app/keystore.properties 里配置
-./gradlew assembleRelease
-```
-
-没有 keystore 时会自动跳过签名（只出 unsigned 包），不会中断构建。
-
-**抓书**
-
-见 [`fetcher/README.md`](fetcher/README.md)。需要先起 fqapp 的 Rust 内核提供 loopback 接口。
-
-### 已知限制
-
-- 听书页是界面模拟，短剧页是封面 + 播放器 UI，都没有真实音视频流
-- `file://` 直开时 Canvas 取色会被判跨源，主题回退到默认种子色；WebView / Electron 下正常
-- 未做真机启动验证（CI 环境无 KVM），原生层只保证静态正确
-- 书库为抓取时点的快照，不含后续更新章节
-
-仓库内正文数据只保留两本，用于界面演示；完整书库不入库。
-
-## 署名
-
-页屿（Yeyu Reader）由 **hrk_** 开发（GitHub: hrk666666）。二次开发自 fqapp 1.4.0（GPL-3.0，
-原作者 ch6vip），手环能力移植自 moye 弦电子书（AGPL-3.0，作者 youshen2）。双端统一以
-AGPL-3.0 发布，完整保留上游版权声明；详见上文「许可与来源声明」。
+<a href="https://www.star-history.com/?repos=hrk666666%2Fshijinpu&type=date&legend=top-left"><picture><source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=hrk666666/shijinpu&type=date&theme=dark&legend=top-left" /><source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=hrk666666/shijinpu&type=date&legend=top-left" /><img alt="Star History" src="https://api.star-history.com/chart?repos=hrk666666/shijinpu&type=date&legend=top-left" /></picture></a>

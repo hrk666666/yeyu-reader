@@ -1,0 +1,192 @@
+import 'package:flutter/material.dart';
+import '../pages/search_page.dart';
+import '../pages/settings_page.dart';
+import '../services/desktop_platform.dart';
+import '../theme/md3.dart';
+
+final desktopTab = ValueNotifier<int>(0);
+
+class DesktopAppFrame extends StatelessWidget {
+  const DesktopAppFrame({super.key, required this.child});
+  final Widget child;
+  void _select(int index) {
+    DesktopPlatform.navigatorKey.currentState?.popUntil(
+      (route) => route.isFirst,
+    );
+    desktopTab.value = index;
+  }
+
+  void _search(String query) {
+    DesktopPlatform.navigatorKey.currentState?.push(
+      SearchRoute<void>(
+        builder: (_) => SearchPage(initialQuery: query.isEmpty ? null : query),
+      ),
+    );
+  }
+
+  @override
+  // MaterialApp.builder is above its Navigator. The frame's own tooltips need
+  // an overlay here; the page Navigator below cannot host a sibling's tooltip.
+  Widget build(BuildContext context) => Overlay.wrap(
+    child: ValueListenableBuilder<bool>(
+      valueListenable: DesktopPlatform.fullscreen,
+      builder: (context, full, _) {
+        if (full) return child;
+        final theme = Theme.of(context);
+        return Material(
+          color: theme.scaffoldBackgroundColor,
+          child: Row(
+            children: [
+              ValueListenableBuilder<int>(
+                valueListenable: desktopTab,
+                builder: (context, index, _) => NavigationRail(
+                  key: const Key('desktop-navigation'),
+                  selectedIndex: index,
+                  onDestinationSelected: _select,
+                  backgroundColor: theme.colorScheme.surface,
+                  minWidth: Md3Dimens.navigationRailWidth,
+                  trailingAtBottom: true,
+                  trailing: Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: IconButton(
+                      key: const Key('desktop-settings'),
+                      tooltip: '设置',
+                      icon: const Icon(Icons.settings_outlined),
+                      onPressed: () =>
+                          DesktopPlatform.navigatorKey.currentState?.push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const SettingsPage(),
+                            ),
+                          ),
+                    ),
+                  ),
+                  labelType: NavigationRailLabelType.all,
+                  leading: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    child: ClipRRect(
+                      // Same plate radius as the about page logo (15%).
+                      borderRadius: Md3Shape.smallRadius,
+                      child: Image.asset(
+                        'assets/images/app_logo.webp',
+                        width: 44,
+                        height: 44,
+                      ),
+                    ),
+                  ),
+                  destinations: const [
+                    NavigationRailDestination(
+                      icon: Icon(Icons.home_outlined),
+                      label: Text('首页'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.movie_outlined),
+                      label: Text('短剧'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.local_library_outlined),
+                      label: Text('书架'),
+                    ),
+                    // 手环传书挨着书架：与移动端底部 dock 同序
+                    // （首页 / 短剧 / 书架 / 手环 / 我的）。
+                    NavigationRailDestination(
+                      icon: Icon(Icons.watch_outlined),
+                      label: Text('手环'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.account_circle_outlined),
+                      label: Text('我的'),
+                    ),
+                  ],
+                ),
+              ),
+              VerticalDivider(
+                width: 1,
+                color: theme.dividerColor.withValues(alpha: .15),
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    Container(
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        border: Border(
+                          bottom: BorderSide(
+                            color: theme.dividerColor.withValues(alpha: .12),
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            tooltip: '返回',
+                            onPressed: () => DesktopPlatform
+                                .navigatorKey
+                                .currentState
+                                ?.maybePop(),
+                            icon: const Icon(Icons.arrow_back, size: 20),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            '页屿',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 17,
+                            ),
+                          ),
+                          const SizedBox(width: 24),
+                          Expanded(
+                            // 短剧分区自带搜索入口（频道条的搜索图标，按
+                            // 短剧名或主演名搜），壳层全局搜索在该分区
+                            // 隐藏，避免两个搜索框上下叠排挤占视频空间；
+                            // 其它分区没有自己的搜索行，仍用全局搜索。
+                            child: ValueListenableBuilder<int>(
+                              valueListenable: desktopTab,
+                              builder: (context, tab, _) => tab == 1
+                                  ? const SizedBox.shrink()
+                                  : Align(
+                                      alignment: Alignment.centerRight,
+                                      child: SizedBox(
+                                        width: 440,
+                                        child: TextField(
+                                          key: const Key('desktop-search'),
+                                          onSubmitted: _search,
+                                          textInputAction:
+                                              TextInputAction.search,
+                                          decoration: InputDecoration(
+                                            hintText:
+                                                '搜索小说、短剧、漫画、听书 / 作品 ID',
+                                            isDense: true,
+                                            prefixIcon: const Icon(
+                                              Icons.search,
+                                              size: 18,
+                                            ),
+                                            filled: true,
+                                            fillColor:
+                                                theme.scaffoldBackgroundColor,
+                                            border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(24),
+                                              borderSide: BorderSide.none,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(child: child),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
+}
