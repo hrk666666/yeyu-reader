@@ -1,7 +1,7 @@
 /// 把书籍数据转成手环端「数据目录」的文件映射。
 ///
 /// 产物是一张 `路径 → 文本` 的表，键与手环 `internal://files/` 下的相对路径
-/// 一致（`books/...`），由 [buildSeedPayload] 内联进 app.js，手环首次启动时
+/// 一致（`books/...`），由 [buildShellAppJs] 内联进 app.js，手环首次启动时
 /// 再按这张表写盘。
 ///
 /// 目录结构照手环端的读取实现（`utils/chapterManager.js`、`utils/interconnfile.js`）：

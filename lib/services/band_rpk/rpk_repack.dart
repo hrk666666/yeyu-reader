@@ -92,14 +92,18 @@ RpkManifest readManifest(Uint8List bytes) {
 /// 改包名并重新签名。
 ///
 /// [newPackage] 为空时保持原包名（只重签，用于换一套密钥的场合）。
-/// [replace] 按文件名替换包内内容（内置书就是替换掉 `app.js`），键必须在
-/// 包里存在，拼错会直接报错而不是静默忽略。
+/// [replace] 按文件名替换包内已有内容，键必须在包里存在，拼错会直接报错。
+/// [write] 写入文件，可覆盖已有文件也可新增（内置书要删掉 `app.jsc`、
+/// 写一份新的 `app.js`，而原包里根本没有这个文件）。
+/// [drop] 从包里删除文件（同样要求键存在，避免拼错后静默不生效）。
 RpkRepackResult repackRpk({
   required Uint8List source,
   required RsaKeyPair key,
   required Uint8List certificate,
   String? newPackage,
   Map<String, Uint8List>? replace,
+  Map<String, Uint8List>? write,
+  Set<String>? drop,
   bool selfCheck = true,
 }) {
   final clean = stripSignBlock(source);
@@ -112,14 +116,25 @@ RpkRepackResult repackRpk({
   final targetPackage = (newPackage == null || newPackage.isEmpty)
       ? manifest.package
       : newPackage;
-  final overrides = replace ?? const <String, Uint8List>{};
   final present = <String>{
     for (final entry in zip.entries)
       if (!entry.isDirectory) entry.name,
   };
-  final missing = overrides.keys.where((name) => !present.contains(name)).toList();
+  final dropped = drop ?? const <String>{};
+  final missingDrop = dropped.where((name) => !present.contains(name)).toList();
+  if (missingDrop.isNotEmpty) {
+    throw FormatException('要删除的文件不在包里：${missingDrop.join('、')}');
+  }
+  final added = write ?? const <String, Uint8List>{};
+  final strict = replace ?? const <String, Uint8List>{};
+  final missing = strict.keys.where((name) => !present.contains(name)).toList();
   if (missing.isNotEmpty) {
     throw FormatException('要替换的文件不在包里：${missing.join('、')}');
+  }
+  final overrides = <String, Uint8List>{...strict, ...added};
+  final conflict = overrides.keys.where(dropped.contains).toList();
+  if (conflict.isNotEmpty) {
+    throw FormatException('同一个文件不能既删除又写入：${conflict.join('、')}');
   }
 
   // 1. 改包名：只替换第一个 "package" 的值，其余字节保持原样。
@@ -137,12 +152,16 @@ RpkRepackResult repackRpk({
   final contents = <String, Uint8List>{};
   for (final entry in zip.entries) {
     if (entry.isDirectory) continue;
+    if (dropped.contains(entry.name)) continue;
     final override = overrides[entry.name];
     contents[entry.name] = override ??
         (entry.name == 'manifest.json' ? patchedManifest : zip.read(entry));
   }
+  for (final extra in added.entries) {
+    contents.putIfAbsent(extra.key, () => extra.value);
+  }
   final oldHash = _readOldHashJson(zip);
-  final hashJson = _buildHashJson(oldHash, contents);
+  final hashJson = _buildHashJson(oldHash, contents, dropped);
 
   // 3. hash.json 单独打包并签名 -> 新的 META-INF/CERT
   final first = zip.entries.first;
@@ -168,6 +187,8 @@ RpkRepackResult repackRpk({
     if (entry.name == 'META-INF/CERT') {
       items.add(_rebuildFromData(entry, newCert));
       certWritten = true;
+    } else if (dropped.contains(entry.name)) {
+      continue;
     } else if (entry.name == 'manifest.json') {
       items.add(_rebuildFromData(entry, patchedManifest));
     } else if (overrides.containsKey(entry.name) || (entry.flag & 0x08 != 0)) {
@@ -204,6 +225,20 @@ RpkRepackResult repackRpk({
       verMade: first.verMade,
       verNeed: first.verNeed,
       data: newCert,
+    ));
+  }
+  // 原包里没有的新文件追加到末尾（app.js 就是这样塞进去的）。
+  for (final extra in added.entries) {
+    if (present.contains(extra.key)) continue;
+    items.add(RpkBuildEntry(
+      name: extra.key,
+      method: 8,
+      mtime: first.mtime,
+      mdate: first.mdate,
+      eattr: 0,
+      verMade: first.verMade,
+      verNeed: first.verNeed,
+      data: extra.value,
     ));
   }
   final packaged = buildZip(items, comment: zip.comment);
@@ -262,8 +297,13 @@ Map<String, dynamic>? _readOldHashJson(RpkZip zip) {
 ///
 /// 官方打 jsc 包时会把编译前的 `.js` 路径写进 hash.json，这些键在包里
 /// 找不到对应文件；沿用旧键并保留它们的旧值，能让产物与官方包保持同样的
-/// 形态，也避免动到无关条目。
-Uint8List _buildHashJson(Map<String, dynamic>? old, Map<String, Uint8List> contents) {
+/// 形态，也避免动到无关条目。被删掉的文件则要连同条目一起删，否则
+/// hash.json 会指向包内不存在的文件。
+Uint8List _buildHashJson(
+  Map<String, dynamic>? old,
+  Map<String, Uint8List> contents,
+  Set<String> dropped,
+) {
   final digests = <String, String>{};
   final oldDigests = old?['digests'];
   if (oldDigests is Map) {
@@ -272,10 +312,19 @@ Uint8List _buildHashJson(Map<String, dynamic>? old, Map<String, Uint8List> conte
     // 而手环并不需要这些条目。
     for (final entry in oldDigests.entries) {
       final name = entry.key.toString();
+      if (dropped.contains(name)) continue;
       final content = contents[name];
       digests[name] = content != null
           ? crypto.sha256.convert(content).toString()
           : entry.value.toString();
+    }
+    // 新增文件必须补进去，否则签名树里少一条。
+    for (final entry in contents.entries) {
+      if (entry.key == 'META-INF/CERT') continue;
+      digests.putIfAbsent(
+        entry.key,
+        () => crypto.sha256.convert(entry.value).toString(),
+      );
     }
   } else {
     for (final entry in contents.entries) {

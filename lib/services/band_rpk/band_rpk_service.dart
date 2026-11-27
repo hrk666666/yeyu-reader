@@ -5,6 +5,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
@@ -109,10 +110,10 @@ class BandRpkService {
     );
   }
 
-  /// 往包里塞书：注入 app.js → 重打包 → 重签。
+  /// 往包里塞书：删掉原入口、写一份带书数据的手写入口 → 重打包 → 重签。
   ///
-  /// 只有明文 `app.js` 的包能塞（混合构建：app.js 明文 + 页面 jsc）。纯 jsc
-  /// 构建的包没有可改的入口脚本，直接拒绝，避免产出一个「看着成功、装上没书」的包。
+  /// 任何手环包都能塞，包括纯 jsc 的正式发布包：入口是整体替换，不是文本注入，
+  /// 页面字节码一个字节都不动。
   Future<RpkArtifact> buildSeeded({
     required RpkSource source,
     required List<SeedSourceBook> books,
@@ -121,21 +122,15 @@ class BandRpkService {
   }) async {
     final manifest = inspect(source);
     final kind = detectEntryKind(rpkEntryNames(source.bytes));
-    if (kind == SeedEntryKind.bytecode) {
-      throw const SeedInjectException(
-        SeedInjectError.noAppJs,
-        '这个包只有 app.jsc（编译产物），塞不了书。要用 app.js 明文的混合包当基座。',
-      );
-    }
     if (kind == SeedEntryKind.unknown) {
       throw const SeedInjectException(
-        SeedInjectError.noAppJs,
-        '这个包里既没有 app.js 也没有 app.jsc，不像是页屿手环端。',
+        SeedInjectError.unsupportedPackage,
+        '这个包里既没有 app.js 也没有 app.jsc，不像是手环快应用包。',
       );
     }
     onStage?.call('准备签名密钥');
     final identity = await _keys.ensureIdentity();
-    onStage?.call('写入书数据并重签');
+    onStage?.call('生成入口并重签');
     final target = (newPackage == null || newPackage.isEmpty) ? null : newPackage;
     final result = await compute(_seedInIsolate, <String, Object?>{
       'bytes': source.bytes,
@@ -265,24 +260,42 @@ Map<String, Object?> _seedInIsolate(Map<String, Object?> args) {
       ),
   ];
   final files = buildSeedFiles(books);
-  final payload = buildSeedPayload(files);
 
   final source = args['bytes'] as Uint8List;
   final zip = RpkZip.parse(stripSignBlock(source));
-  final appJs = zip.readByName('app.js');
-  if (appJs == null) {
+  final manifestBytes = zip.readByName('manifest.json');
+  if (manifestBytes == null) {
     throw const SeedInjectException(
-      SeedInjectError.noAppJs,
-      '这个包没有 app.js，塞不了书',
+      SeedInjectError.unsupportedPackage,
+      '这个包里没有 manifest.json，不像是手环快应用包',
     );
   }
-  final injected = injectSeed(appJs, payload);
+  final manifest =
+      json.decode(utf8.decode(manifestBytes, allowMalformed: true)) as Map<String, dynamic>;
+
+  // 壳里内联的那份 manifest 必须用目标包名，否则改包名后应用自报的身份
+  // 与安装包对不上（存储隔离、台标都会按它走）。
+  final target = (args['package'] as String?)?.trim();
+  if (target != null && target.isNotEmpty) {
+    manifest['package'] = target;
+  }
+  final shell = buildShellAppJs(manifest: manifest, files: files);
+
+  // 入口只留一份：原包不管是 app.js 还是 app.jsc 都删掉，换成手写壳。
+  // 两份并存时运行时用哪一份没有保证，删干净才确定。
+  final drop = <String>{
+    for (final name in const <String>['app.js', 'app.jsc'])
+      if (zip.readByName(name) != null) name,
+  };
   final result = repackRpk(
     source: source,
     key: key,
     certificate: args['cert'] as Uint8List,
     newPackage: args['package'] as String?,
-    replace: <String, Uint8List>{'app.js': injected},
+    write: <String, Uint8List>{
+      'app.js': Uint8List.fromList(utf8.encode(shell)),
+    },
+    drop: drop,
   );
   return <String, Object?>{
     'bytes': result.bytes,
@@ -290,6 +303,8 @@ Map<String, Object?> _seedInIsolate(Map<String, Object?> args) {
     'package': result.newPackage,
     'fileCount': result.fileCount,
     'bookCount': books.length,
+    'shellBytes': shell.length,
+    'dropped': drop.join(','),
   };
 }
 

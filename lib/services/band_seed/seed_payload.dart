@@ -1,23 +1,29 @@
-/// 生成注入 app.js 的种子片段。
+/// 生成「内置书入口」app.js。
 ///
-/// 片段与 PC 端 `make_seed_payload.py` 的输出逐字一致：一段 IIFE，把整本书的
-/// 文件表内联成 `SEED`，首帧渲染完成后再写盘。手环端不提供包内资源读取通道
-/// （`@system.file` 只认 `internal://files|cache|mass`），所以只能「启动时把
-/// 书写进数据目录」，不能在运行时直接读包里的文件。
+/// 手环快应用的入口不一定要是 webpack 产物：运行时只认入口脚本默认导出对象上的
+/// `manifest` 与生命周期函数。所以这里直接写一份几十 KB 的明文入口，
+/// 把书数据内联进去，启动后写盘，页面字节码一个都不动。
+///
+/// 已用 Vela 模拟器验证：手写入口替换 183 KB bundle 后可正常启动、首页渲染、
+/// 文件落盘。
 library;
 
 import 'dart:convert';
 
-/// 注入标记。检测「这个包已经塞过书」靠它。
-const String kSeedPayloadMarker = 'injected seed payload';
-
-/// 已写入完成的标记文件（手环侧）。
+/// 已经塞过书的标记文件（手环侧）。
 const String kSeedDoneMarker = 'internal://files/books/.seeded';
 
-/// 把文件映射编成可直接插进 app.js 的片段。
+/// 在 app.js 里标记这是内置书入口。
+const String kSeedPayloadMarker = 'injected seed payload';
+
+/// 把 manifest 与书文件编成一份完整可用的 `app.js`。
 ///
+/// [manifest] 是原包 manifest.json 的内容（原样内联，包名等字段由 repack 决定）。
 /// [files] 的键是相对手环 `files/` 的路径，值是该文件文本。
-String buildSeedPayload(Map<String, String> files) {
+String buildShellAppJs({
+  required Map<String, dynamic> manifest,
+  required Map<String, String> files,
+}) {
   if (files.isEmpty) {
     throw const FormatException('没有可写入的文件');
   }
@@ -25,82 +31,141 @@ String buildSeedPayload(Map<String, String> files) {
   final seed = jsonEncode(files)
       .replaceAll('\u2028', r'\u2028')
       .replaceAll('\u2029', r'\u2029');
-  return _template.replaceFirst('__SEED__', seed);
+  final manifestJson = _jsSingleQuoted(jsonEncode(manifest));
+  return _shell
+      .replaceFirst('__MANIFEST__', manifestJson)
+      .replaceFirst('__SEED__', seed);
 }
 
-/// 片段里的数据部分（调试/统计用）。
+/// 书数据部分的字符数（调试/统计用）。
 int seedCharCount(Map<String, String> files) =>
     files.values.fold(0, (sum, text) => sum + text.length);
 
-/// 与 PC 端模板一致；`\` 与 `$` 在 Dart 字符串里要转义，产物本身不变。
-const String _template = r'''
-  /* ---- injected seed payload (text-level, no compile) ---- */
-  (function () {
-    var SEED = __SEED__;
-    var MARK = 'internal://files/books/.seeded';
-    function log(m) { try { console.error('[SEED] ' + m); } catch (e) {} }
-    var g = global;
-    var st = (typeof setTimeout !== 'undefined') ? setTimeout : (g && g.setTimeout);
-    function start() {
-      var f = null;
-      try { f = $app_require$('@app-module/system.file'); } catch (e) { return log('nofile ' + e); }
-      if (!f) return log('nofile-null');
+/// 把 JSON 变成能安全放进单引号 JS 字面量的文本。
+String _jsSingleQuoted(String json) => json
+    .replaceAll('\\', r'\\')
+    .replaceAll("'", r"\'")
+    .replaceAll('\n', r'\n')
+    .replaceAll('\r', r'\r');
 
-      var keys = Object.keys(SEED);
-      var dirs = {};
-      keys.forEach(function (k) {
-        var parts = k.split('/');
-        var acc = '';
-        for (var i = 0; i < parts.length - 1; i++) {
-          acc += (i ? '/' : '') + parts[i];
-          dirs['internal://files/' + acc] = 1;
-        }
-      });
-      var dlist = Object.keys(dirs);
-      var written = 0;
-      var t0 = Date.now();
+/// 入口脚本模板。`$` 与 `\` 在 Dart raw 字符串里保持原样。
+const String _shell = r'''
+/* 页屿 · 内置书入口（手写，非 aiot build 产物）
+ *
+ * injected seed payload (shell, no compile)
+ *
+ * 这个文件替代原包的 app.jsc：页面字节码全部保留，只把入口换成
+ * 「启动后把书写进 internal://files/books/」。
+ * 代价：传书通道（conn.register）不在，内置书版不需要它。
+ */
+export default function (global, globalThis, window, $app_exports$, $app_evaluate$) {
+  var MANIFEST = JSON.parse('__MANIFEST__');
+  var SEED = __SEED__;
+  var MARK = 'internal://files/books/.seeded';
+  var req = global.$app_require$ || (typeof $app_require$ !== 'undefined' ? $app_require$ : null);
 
-      function done() {
-        f.writeText({ uri: MARK, text: '1', complete: function () {
-          log('seeded ' + written + '/' + keys.length + ' in ' + (Date.now() - t0) + 'ms');
-          // 首帧读的是空书架，缓存必须失效，否则新数据永远读不到
-          try { g.__bookshelf_cache__ = null; } catch (e) {}
-          try { g.__seedBusy__ = false; } catch (e) {}
-        } });
-      }
+  function log(m) { try { console.error('[SEED] ' + m); } catch (e) {} }
 
-      function writeAll() {
-        if (!keys.length) return done();
-        var pending = keys.length;
-        function tick() { if (--pending === 0) done(); }
-        keys.forEach(function (k) {
-          var uri = 'internal://files/' + k;
-          f.readText({
-            uri: uri,
-            success: function () { tick(); },
-            fail: function () {
-              f.writeText({
-                uri: uri,
-                text: SEED[k],
-                success: function () { written++; tick(); },
-                fail: function () { tick(); }
-              });
-            }
-          });
-        });
-      }
+  // 入口拿到的 global 与页面里的 globalThis 不保证是同一个对象，
+  // 页面靠 __seedBusy__ / __bookshelf_cache__ 判断要不要重读书架，两边都设一份。
+  function setFlag(key, value) {
+    try { global[key] = value; } catch (e) {}
+    try { globalThis[key] = value; } catch (e) {}
+  }
 
-      (function mkdirAll() {
-        if (!dlist.length) return writeAll();
-        var pending = dlist.length;
-        dlist.forEach(function (d) {
-          f.mkdir({ uri: d, complete: function () { if (--pending === 0) writeAll(); } });
-        });
-      })();
+  function writeBooks() {
+    if (!req) return log('no require');
+    var f = null;
+    try { f = req('@app-module/system.file'); } catch (e) { return log('nofile ' + e); }
+    if (!f) return log('nofile-null');
+
+    // 页面首帧只读 bookshelf.json 列书，先写它，剩下的再铺开
+    var keys = Object.keys(SEED);
+    keys.sort(function (a, b) {
+      var A = a === 'books/bookshelf.json' ? 0 : 1;
+      var B = b === 'books/bookshelf.json' ? 0 : 1;
+      return A - B;
+    });
+    var t0 = Date.now();
+    var written = 0;
+
+    function reloadHome() {
+      try {
+        var r = req('@app-module/system.router');
+        if (!r || !r.replace) return log('no router');
+        var uri = (MANIFEST.router && MANIFEST.router.entry) || 'pages/index';
+        r.replace({ uri: uri });
+        log('reload ' + uri);
+      } catch (e) { log('reload fail ' + e); }
     }
-    try { g.__seedBusy__ = true; } catch (e) {}
-    // 延后写入：首帧渲染（约 105ms）完成后再抢 IO，避免拖慢启动。
-    // 页面侧 onShow 有 __seedBusy__ 轮询兜底，不依赖写入早于首帧。
-    if (st) st(start, 300); else start();
-  })();
+
+    function finish() {
+      f.writeText({ uri: MARK, text: '1', complete: function () {
+        log('seeded ' + written + '/' + keys.length + ' in ' + (Date.now() - t0) + 'ms');
+        // 首帧读的是空书架，缓存必须失效，否则新数据永远读不到
+        setFlag('__bookshelf_cache__', null);
+        setFlag('__seedBusy__', false);
+        // 页面已经在首帧把空态画出来了，缓存清了也不会自己重读：
+        // 主动回一次首页，让页面重建时读到写好的书架。
+        var later = (typeof setTimeout !== 'undefined') ? setTimeout : (global && global.setTimeout);
+        if (later) { later(reloadHome, 300); } else { reloadHome(); }
+      } });
+    }
+
+    function writeAll() {
+      if (!keys.length) return finish();
+      var pending = keys.length;
+      function tick() { if (--pending === 0) finish(); }
+      keys.forEach(function (k) {
+        f.writeText({
+          uri: 'internal://files/' + k,
+          text: SEED[k],
+          success: function () { written++; tick(); },
+          fail: function (e) { log('write fail ' + k); tick(); }
+        });
+      });
+    }
+
+    // 只建两个目录：其余子目录 writeText 会自己补齐，逐个 mkdir 只会刷一堆
+    // operation not permitted。
+    f.mkdir({ uri: 'internal://files/books/', complete: function () {
+      f.mkdir({ uri: 'internal://files/books/storage-api/', complete: writeAll });
+    } });
+  }
+
+  setFlag('__seedBusy__', true);
+  // 立即写：首帧会去读 bookshelf.json，晚 300ms 就只能看到空书架。
+  // 写盘是异步 IO，JS 侧只是发起调用，实测不拖慢首帧。
+  writeBooks();
+
+  // 原 app.ux 只做两件事：建目录、按用户设置恢复亮度。前者已在写盘里覆盖。
+  // 亮度恢复暂时不做：模拟器对未实现的 feature 取模块会抛不可捕获的错误，
+  // 直接把 LVGL 带崩，得在真机上单独验证再补。
+  $app_exports$.default = {};
+  $app_exports$.default.manifest = MANIFEST;
+  // app.ux 没有 <style>，编译产物里是空数组；但页面元素会用 style 绑定，
+  // 缺了这一项 detail 页会报「style 函数没有求值」并白屏。
+  $app_exports$.default.style = [];
+  $app_exports$.default.onShow = function () {};
+
+  // 同样是 app.ux 编译时挂到全局上的工具函数，页面样式绑定要用
+  try {
+    global.$translateStyle$ = function (value) {
+      if (typeof value === 'string') {
+        return Object.fromEntries(
+          value.split(';')
+            .filter(function (item) { return Boolean(item && item.trim()); })
+            .map(function (item) {
+              var m = item.match(/([^:]+):(.*)/);
+              if (m && m.length > 2) {
+                return [m[1].trim().replace(/-([a-z])/g, function (_, c) { return c.toUpperCase(); }), m[2].trim()];
+              }
+              return [];
+            })
+        );
+      }
+      return value;
+    };
+  } catch (e) { log('translateStyle fail ' + e); }
+}
 ''';

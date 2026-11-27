@@ -103,78 +103,75 @@ void main() {
     });
   });
 
-  group('种子片段', () {
-    test('带注入标记，SEED 是可解析的 JSON', () {
-      final files = buildSeedFiles(<SeedSourceBook>[
-        SeedSourceBook(
-          title: '书',
-          author: '',
-          chapters: const <SeedSourceChapter>[
-            SeedSourceChapter(title: '一', text: '正文'),
-          ],
-        ),
-      ]);
-      final payload = buildSeedPayload(files);
-      expect(payload, contains(kSeedPayloadMarker));
-      expect(payload, contains(r'$app_require$'));
-      final match = RegExp(r'var SEED = (\{.*?\});\s*\n\s*var MARK', dotAll: true)
-          .firstMatch(payload)!;
+  group('内置书入口', () {
+    Map<String, String> oneBook() => buildSeedFiles(<SeedSourceBook>[
+          SeedSourceBook(
+            title: '书',
+            author: '',
+            chapters: const <SeedSourceChapter>[
+              SeedSourceChapter(title: '一', text: '正文'),
+            ],
+          ),
+        ]);
+
+    test('是一份完整入口：导出函数 + manifest + 生命周期', () {
+      final shell = buildShellAppJs(
+        manifest: const <String, dynamic>{'package': 'com.yeyu.reader', 'name': '页屿'},
+        files: oneBook(),
+      );
+      expect(shell, contains('export default function'));
+      expect(shell, contains(r'$app_exports$.default.manifest = MANIFEST'));
+      expect(shell, contains(r'$app_exports$.default.onShow'));
+      expect(shell, contains(kSeedPayloadMarker));
+      // manifest 原样内联，包名等信息不丢
+      expect(shell, contains('com.yeyu.reader'));
+      expect(shell, contains('页屿'));
+    });
+
+    test('SEED 是可解析的 JSON，键是 books/ 相对路径', () {
+      final shell = buildShellAppJs(
+        manifest: const <String, dynamic>{'package': 'p.q'},
+        files: oneBook(),
+      );
+      final match =
+          RegExp(r'var SEED = (\{.*\});\n  var MARK', dotAll: true).firstMatch(shell)!;
       final parsed = jsonDecode(match.group(1)!) as Map<String, dynamic>;
       expect(parsed.keys, contains('books/bookshelf.json'));
+      expect(parsed.values.every((v) => v is String), isTrue);
     });
 
     test('正文里的 U+2028 被转义，不会把 JS 字符串截断', () {
-      final files = <String, String>{'books/x.txt': '前\u2028后'};
-      final payload = buildSeedPayload(files);
-      expect(payload.contains('\u2028'), isFalse);
-      expect(payload, contains(r'\u2028'));
+      final shell = buildShellAppJs(
+        manifest: const <String, dynamic>{'package': 'p.q'},
+        files: <String, String>{'books/x.txt': '前\u2028后'},
+      );
+      expect(shell.contains('\u2028'), isFalse);
+      expect(shell, contains(r'\u2028'));
+    });
+
+    test('没有书直接报错', () {
+      expect(
+        () => buildShellAppJs(
+          manifest: const <String, dynamic>{'package': 'p.q'},
+          files: const <String, String>{},
+        ),
+        throwsFormatException,
+      );
     });
   });
 
-  group('注入', () {
-    test('插在锚点之后，锚点本身保留', () {
-      final source = Uint8List.fromList(utf8.encode(_appJs));
-      final injected = utf8.decode(injectSeed(source, '  /* payload */'));
-      expect(injected, contains(r'var org_app_require = $app_require$;'));
-      final anchorAt = injected.indexOf(r'var org_app_require = $app_require$;');
-      final payloadAt = injected.indexOf('/* payload */');
-      expect(payloadAt, greaterThan(anchorAt));
-    });
-
-    test('已经注入过的包拒绝二次注入', () {
-      final source = Uint8List.fromList(utf8.encode(_appJs));
-      final once = injectSeed(source, '/* $kSeedPayloadMarker */');
+  group('入口类型判断', () {
+    test('按文件清单判断', () {
       expect(
-        () => injectSeed(once, '/* again */'),
-        throwsA(isA<SeedInjectException>().having(
-          (e) => e.reason,
-          'reason',
-          SeedInjectError.alreadyInjected,
-        )),
+        detectEntryKind(<String>['app.js', 'pages/index/index.jsc']),
+        SeedEntryKind.plainJs,
       );
-    });
-
-    test('没有锚点时报错而不是静默跳过', () {
-      final source = Uint8List.fromList(utf8.encode('console.log(1);'));
-      expect(
-        () => injectSeed(source, '/* x */'),
-        throwsA(isA<SeedInjectException>().having(
-          (e) => e.reason,
-          'reason',
-          SeedInjectError.anchorMissing,
-        )),
-      );
-    });
-
-    test('入口类型按文件清单判断', () {
-      expect(detectEntryKind(<String>['app.js', 'pages/index/index.jsc']),
-          SeedEntryKind.plainJs);
       expect(detectEntryKind(<String>['app.jsc']), SeedEntryKind.bytecode);
       expect(detectEntryKind(<String>['manifest.json']), SeedEntryKind.unknown);
     });
   });
 
-  group('打进出包', () {
+  group('出包', () {
     late RsaKeyPair key;
     late Uint8List certificate;
 
@@ -183,7 +180,7 @@ void main() {
       certificate = buildSelfSignedCertificate(key);
     });
 
-    test('替换 app.js 后签名自检通过，页面仍是 jsc', () {
+    test('纯 jsc 包：删入口、写壳、页面不动、签名自检通过', () {
       final books = <SeedSourceBook>[
         SeedSourceBook(
           title: '内置书',
@@ -193,21 +190,27 @@ void main() {
           ],
         ),
       ];
-      final payload = buildSeedPayload(buildSeedFiles(books));
-      final injected = injectSeed(
-        Uint8List.fromList(utf8.encode(_appJs)),
-        payload,
+      final shell = buildShellAppJs(
+        manifest: const <String, dynamic>{'package': 'com.yeyu.reader'},
+        files: buildSeedFiles(books),
       );
       final result = repackRpk(
-        source: _makePlainPackage('com.yeyu.reader'),
+        source: _makeBytecodePackage('com.yeyu.reader'),
         key: key,
         certificate: certificate,
         newPackage: 'com.yeyu.reader.seed',
-        replace: <String, Uint8List>{'app.js': injected},
+        write: <String, Uint8List>{'app.js': Uint8List.fromList(utf8.encode(shell))},
+        drop: <String>{'app.jsc'},
       );
 
       expect(verifySignedRpk(result.bytes), isTrue);
       final zip = RpkZip.parse(stripSignBlock(result.bytes));
+      final names = <String>[
+        for (final e in zip.entries)
+          if (!e.isDirectory) e.name,
+      ];
+      expect(names, isNot(contains('app.jsc')));
+      expect(names, contains('app.js'));
       final appJs = utf8.decode(zip.readByName('app.js')!);
       expect(appJs, contains(kSeedPayloadMarker));
       expect(appJs, contains('books/bookshelf.json'));
@@ -218,15 +221,62 @@ void main() {
       );
     });
 
-    test('要替换的文件不在包里时直接报错', () {
+    test('hash.json 不留下已删文件的条目', () {
+      final first = repackRpk(
+        source: _makeBytecodePackage('com.yeyu.reader'),
+        key: key,
+        certificate: certificate,
+      );
+      final result = repackRpk(
+        source: first.bytes,
+        key: key,
+        certificate: certificate,
+        write: <String, Uint8List>{
+          'app.js': Uint8List.fromList(utf8.encode('export default function(){}')),
+        },
+        drop: <String>{'app.jsc'},
+      );
+      final zip = RpkZip.parse(stripSignBlock(result.bytes));
+      final inner = RpkZip.parse(stripSignBlock(zip.readByName('META-INF/CERT')!));
+      final hashJson =
+          jsonDecode(utf8.decode(inner.readByName('hash.json')!)) as Map<String, dynamic>;
+      final digests = hashJson['digests'] as Map<String, dynamic>;
+      expect(digests.keys, isNot(contains('app.jsc')));
+      expect(digests.keys, contains('app.js'));
+    });
+
+    test('删不存在的文件直接报错', () {
       expect(
         () => repackRpk(
-          source: _makePlainPackage('com.yeyu.reader'),
+          source: _makeBytecodePackage('com.yeyu.reader'),
           key: key,
           certificate: certificate,
-          replace: <String, Uint8List>{
-            'app.typo.js': Uint8List.fromList(utf8.encode('x')),
-          },
+          drop: <String>{'app.typo.jsc'},
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('同一个文件既删又写直接报错', () {
+      expect(
+        () => repackRpk(
+          source: _makeBytecodePackage('com.yeyu.reader'),
+          key: key,
+          certificate: certificate,
+          drop: <String>{'app.jsc'},
+          write: <String, Uint8List>{'app.jsc': Uint8List.fromList(utf8.encode('x'))},
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('replace 拼错文件名仍然报错', () {
+      expect(
+        () => repackRpk(
+          source: _makeBytecodePackage('com.yeyu.reader'),
+          key: key,
+          certificate: certificate,
+          replace: <String, Uint8List>{'app.typo.js': Uint8List.fromList(utf8.encode('x'))},
         ),
         throwsA(isA<FormatException>()),
       );
@@ -242,15 +292,10 @@ String _dirOf(Map<String, String> files) {
 }
 
 const String _pageJs = 'this is compiled bytecode stand-in';
+const String _appJsc = 'compiled entry bytecode stand-in';
 
-const String _appJs = '''
-export default function(global, globalThis, window, \$app_exports\$, \$app_evaluate\$) {
-    var org_app_require = \$app_require\$;
-    org_app_require('@app-module/system.file');
-}
-''';
-
-Uint8List _makePlainPackage(String package) {
+/// 正式发布包的形态：只有 app.jsc，没有 app.js。
+Uint8List _makeBytecodePackage(String package) {
   final manifest = utf8.encode('{\n'
       '  "package": "$package",\n'
       '  "name": "页屿",\n'
@@ -270,14 +315,14 @@ Uint8List _makePlainPackage(String package) {
       data: Uint8List.fromList(manifest),
     ),
     RpkBuildEntry(
-      name: 'app.js',
+      name: 'app.jsc',
       method: 8,
       mtime: 0,
       mdate: 0,
       eattr: 0,
       verMade: 20,
       verNeed: 20,
-      data: Uint8List.fromList(utf8.encode(_appJs)),
+      data: Uint8List.fromList(utf8.encode(_appJsc)),
     ),
     RpkBuildEntry(
       name: 'pages/index/index.jsc',

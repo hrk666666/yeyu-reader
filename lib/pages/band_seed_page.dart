@@ -11,9 +11,9 @@ import '../services/imported_book_store.dart';
 
 /// 内置书安装包：把书架里的本地书塞进手环 rpk，装完打开就有书。
 ///
-/// 只能塞进「app.js 明文 + 页面 jsc」的混合包：注入是纯文本操作，纯 jsc 构建
-/// 的包没有可改的入口脚本。所以这里要选一个混合构建的基座包，而不是随便一个
-/// 官方包。写入发生在手环首次启动、首帧渲染之后，已存在的书不会被覆盖。
+/// 任意手环 rpk 都行，官方正式包也可以：出包时把原入口（app.js / app.jsc）删掉，
+/// 换成一个手写的明文入口，书数据内联在里面，页面字节码一个字节不动。
+/// 写入发生在手环首次启动、首帧渲染之后，已写过的不会重复写。
 class BandSeedPage extends StatefulWidget {
   const BandSeedPage({super.key, this.store, this.service});
 
@@ -242,9 +242,10 @@ class _BandSeedPageState extends State<BandSeedPage> {
             const SizedBox(height: 12),
             _notice(
               theme,
-              Icons.info_outline,
-              '这个包只有 app.jsc，塞不了书',
-              'app.jsc 是编译后的字节码，改不了。要用 app.js 明文的混合构建包当基座。',
+              Icons.swap_horiz,
+              '入口是编译后的 app.jsc',
+              '没关系：出包时会把 app.jsc 换成带书数据的明文入口，页面字节码原样保留，'
+              '书架、阅读、设置都不变。',
             ),
           ],
           const SizedBox(height: 12),
@@ -254,7 +255,7 @@ class _BandSeedPageState extends State<BandSeedPage> {
             _renameCard(theme, manifest),
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: _busy || _entryKind != SeedEntryKind.plainJs
+              onPressed: _busy || _entryKind == SeedEntryKind.unknown
                   ? null
                   : _build,
               icon: _busy
@@ -298,8 +299,8 @@ class _BandSeedPageState extends State<BandSeedPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              '只能塞进「app.js 明文 + 页面 jsc」的混合包：注入是改文本，'
-              '纯 jsc 包没有可改的入口。建议一包不超过 14 万字，再多会吃紧手环内存。',
+              '官方包也能塞：入口换成内置书入口，页面不变。'
+              '代价是没有传书通道，书只能靠重新出包装。建议一包不超过 14 万字，再多会吃紧手环内存。',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -322,8 +323,8 @@ class _BandSeedPageState extends State<BandSeedPage> {
             title: Text(source?.name ?? '还没有选择基座包'),
             subtitle: Text(
               source == null
-                  ? '选择手环端 rpk（必须带 app.js 明文）'
-                  : '入口脚本：${_entryKind == SeedEntryKind.plainJs ? 'app.js 明文，可以塞书' : 'app.jsc 字节码，塞不了'}',
+                  ? '选择手环端 rpk（官方包也可以）'
+                  : '入口：${_entryKind == SeedEntryKind.plainJs ? 'app.js 明文' : 'app.jsc 字节码'}，出包时替换',
             ),
             trailing: TextButton(
               onPressed: _busy ? null : _pick,
