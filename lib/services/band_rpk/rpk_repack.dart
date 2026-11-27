@@ -92,11 +92,14 @@ RpkManifest readManifest(Uint8List bytes) {
 /// 改包名并重新签名。
 ///
 /// [newPackage] 为空时保持原包名（只重签，用于换一套密钥的场合）。
+/// [replace] 按文件名替换包内内容（内置书就是替换掉 `app.js`），键必须在
+/// 包里存在，拼错会直接报错而不是静默忽略。
 RpkRepackResult repackRpk({
   required Uint8List source,
   required RsaKeyPair key,
   required Uint8List certificate,
   String? newPackage,
+  Map<String, Uint8List>? replace,
   bool selfCheck = true,
 }) {
   final clean = stripSignBlock(source);
@@ -109,6 +112,15 @@ RpkRepackResult repackRpk({
   final targetPackage = (newPackage == null || newPackage.isEmpty)
       ? manifest.package
       : newPackage;
+  final overrides = replace ?? const <String, Uint8List>{};
+  final present = <String>{
+    for (final entry in zip.entries)
+      if (!entry.isDirectory) entry.name,
+  };
+  final missing = overrides.keys.where((name) => !present.contains(name)).toList();
+  if (missing.isNotEmpty) {
+    throw FormatException('要替换的文件不在包里：${missing.join('、')}');
+  }
 
   // 1. 改包名：只替换第一个 "package" 的值，其余字节保持原样。
   final pattern = RegExp(r'("package"\s*:\s*")([^"]*)(")');
@@ -125,9 +137,9 @@ RpkRepackResult repackRpk({
   final contents = <String, Uint8List>{};
   for (final entry in zip.entries) {
     if (entry.isDirectory) continue;
-    contents[entry.name] = entry.name == 'manifest.json'
-        ? patchedManifest
-        : zip.read(entry);
+    final override = overrides[entry.name];
+    contents[entry.name] = override ??
+        (entry.name == 'manifest.json' ? patchedManifest : zip.read(entry));
   }
   final oldHash = _readOldHashJson(zip);
   final hashJson = _buildHashJson(oldHash, contents);
@@ -158,8 +170,8 @@ RpkRepackResult repackRpk({
       certWritten = true;
     } else if (entry.name == 'manifest.json') {
       items.add(_rebuildFromData(entry, patchedManifest));
-    } else if (entry.flag & 0x08 != 0) {
-      // 带 data descriptor 的条目没法整段搬运，退回解压重压缩。
+    } else if (overrides.containsKey(entry.name) || (entry.flag & 0x08 != 0)) {
+      // 替换过的条目必须重新压缩；带 data descriptor 的条目也没法整段搬运。
       items.add(_rebuildFromData(entry, contents[entry.name]!));
     } else {
       items.add(RpkBuildEntry(
@@ -306,3 +318,12 @@ Uint8List _buildCert(
 
 Uint8List _sha256(Uint8List data) =>
     Uint8List.fromList(crypto.sha256.convert(data).bytes);
+
+/// 包内文件清单（不含签名块），用来判断入口脚本是明文还是字节码。
+List<String> rpkEntryNames(Uint8List bytes) {
+  final zip = RpkZip.parse(stripSignBlock(bytes));
+  return <String>[
+    for (final entry in zip.entries)
+      if (!entry.isDirectory) entry.name,
+  ];
+}

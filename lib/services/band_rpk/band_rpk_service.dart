@@ -12,9 +12,14 @@ import 'package:flutter/services.dart';
 
 import '../book_txt_export.dart' show ExportTarget, ExportWriteException;
 import '../platform_channel.dart';
+import '../band_seed/seed_books.dart';
+import '../band_seed/seed_injector.dart';
+import '../band_seed/seed_payload.dart';
 import 'rpk_key_store.dart';
 import 'rpk_repack.dart';
 import 'rpk_rsa.dart';
+import 'rpk_sign.dart';
+import 'rpk_zip.dart';
 
 /// 选中的 rpk 文件。
 class RpkSource {
@@ -104,6 +109,63 @@ class BandRpkService {
     );
   }
 
+  /// 往包里塞书：注入 app.js → 重打包 → 重签。
+  ///
+  /// 只有明文 `app.js` 的包能塞（混合构建：app.js 明文 + 页面 jsc）。纯 jsc
+  /// 构建的包没有可改的入口脚本，直接拒绝，避免产出一个「看着成功、装上没书」的包。
+  Future<RpkArtifact> buildSeeded({
+    required RpkSource source,
+    required List<SeedSourceBook> books,
+    String? newPackage,
+    void Function(String stage)? onStage,
+  }) async {
+    final manifest = inspect(source);
+    final kind = detectEntryKind(rpkEntryNames(source.bytes));
+    if (kind == SeedEntryKind.bytecode) {
+      throw const SeedInjectException(
+        SeedInjectError.noAppJs,
+        '这个包只有 app.jsc（编译产物），塞不了书。要用 app.js 明文的混合包当基座。',
+      );
+    }
+    if (kind == SeedEntryKind.unknown) {
+      throw const SeedInjectException(
+        SeedInjectError.noAppJs,
+        '这个包里既没有 app.js 也没有 app.jsc，不像是页屿手环端。',
+      );
+    }
+    onStage?.call('准备签名密钥');
+    final identity = await _keys.ensureIdentity();
+    onStage?.call('写入书数据并重签');
+    final target = (newPackage == null || newPackage.isEmpty) ? null : newPackage;
+    final result = await compute(_seedInIsolate, <String, Object?>{
+      'bytes': source.bytes,
+      'pem': identity.privateKeyPem,
+      'cert': identity.certificate,
+      'package': target,
+      'books': <Object?>[
+        for (final book in books)
+          <String, Object?>{
+            'title': book.title,
+            'author': book.author,
+            'chapters': <Object?>[
+              for (final chapter in book.chapters)
+                <String, Object?>{'title': chapter.title, 'text': chapter.text},
+            ],
+          },
+      ],
+    });
+    final package = result['package'] as String;
+    final count = result['bookCount'] as int;
+    return RpkArtifact(
+      fileName: _seedFileNameFor(manifest.name, package, count),
+      bytes: result['bytes'] as Uint8List,
+      oldPackage: result['oldPackage'] as String,
+      newPackage: package,
+      fileCount: result['fileCount'] as int,
+      renamed: package != manifest.package,
+    );
+  }
+
   /// 把原包原样交出去（不改包名、不重签）。
   RpkArtifact passthrough(RpkSource source) {
     final manifest = inspect(source);
@@ -159,6 +221,12 @@ class BandRpkService {
     final safeApp = appName.isEmpty ? 'rpk' : appName;
     return '$safeApp-$package.rpk';
   }
+
+  /// 内置书包的文件名带本数，下载目录里一眼能分清是哪个包。
+  static String _seedFileNameFor(String appName, String package, int books) {
+    final safeApp = appName.isEmpty ? 'rpk' : appName;
+    return '$safeApp-内置$books本-$package.rpk';
+  }
 }
 
 /// isolate 入口：参数与返回值都必须是可跨 isolate 传输的类型。
@@ -177,3 +245,51 @@ Map<String, Object?> _repackInIsolate(Map<String, Object?> args) {
     'fileCount': result.fileCount,
   };
 }
+
+/// isolate 入口：生成书数据 → 注入 app.js → 重打包重签。
+Map<String, Object?> _seedInIsolate(Map<String, Object?> args) {
+  final key = decodePrivateKeyPem(args['pem'] as String);
+  final rawBooks = (args['books'] as List).cast<Map<Object?, Object?>>();
+  final books = <SeedSourceBook>[
+    for (final raw in rawBooks)
+      SeedSourceBook(
+        title: raw['title'] as String,
+        author: raw['author'] as String,
+        chapters: <SeedSourceChapter>[
+          for (final chapter in (raw['chapters'] as List).cast<Map<Object?, Object?>>())
+            SeedSourceChapter(
+              title: chapter['title'] as String,
+              text: chapter['text'] as String,
+            ),
+        ],
+      ),
+  ];
+  final files = buildSeedFiles(books);
+  final payload = buildSeedPayload(files);
+
+  final source = args['bytes'] as Uint8List;
+  final zip = RpkZip.parse(stripSignBlock(source));
+  final appJs = zip.readByName('app.js');
+  if (appJs == null) {
+    throw const SeedInjectException(
+      SeedInjectError.noAppJs,
+      '这个包没有 app.js，塞不了书',
+    );
+  }
+  final injected = injectSeed(appJs, payload);
+  final result = repackRpk(
+    source: source,
+    key: key,
+    certificate: args['cert'] as Uint8List,
+    newPackage: args['package'] as String?,
+    replace: <String, Uint8List>{'app.js': injected},
+  );
+  return <String, Object?>{
+    'bytes': result.bytes,
+    'oldPackage': result.oldPackage,
+    'package': result.newPackage,
+    'fileCount': result.fileCount,
+    'bookCount': books.length,
+  };
+}
+

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/band_rpk/band_rpk_service.dart';
+import 'band_seed_page.dart';
 import '../services/band_rpk/rpk_repack.dart';
 import '../services/book_txt_export.dart' show ExportTarget, ExportWriteException;
 
@@ -157,7 +158,18 @@ class _BandRpkToolPageState extends State<BandRpkToolPage> {
     final source = _source;
     final manifest = _manifest;
     return Scaffold(
-      appBar: AppBar(title: const Text('手环安装包工具')),
+      appBar: AppBar(
+        title: const Text('手环安装包工具'),
+        actions: <Widget>[
+          IconButton(
+            tooltip: '内置书安装包',
+            icon: const Icon(Icons.library_add_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const BandSeedPage()),
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         children: <Widget>[
