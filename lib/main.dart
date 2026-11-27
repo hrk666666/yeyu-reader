@@ -17,6 +17,7 @@ import 'package:hive_ce_flutter/hive_flutter.dart';
 
 import 'dart:async';
 
+import 'config/feature_flags.dart';
 import 'pages/home_page.dart';
 import 'pages/audio_page.dart';
 import 'pages/band_book_page.dart';
@@ -475,6 +476,8 @@ class _RootShellState extends State<RootShell> {
   /// 首页头部是普通 sliver（不是折叠 AppBar），把 offset 归零即等价，吸顶的
   /// 分类栏会自己重新吸住。
   void _selectTab(int index) {
+    // 短剧入口关闭时，任何指向 1 号的跳转都退到书架，不让壳层停在隐藏页上。
+    if (!kDramaEnabled && index == 1) index = 2;
     if (index != _index) {
       setState(() => _index = index);
       return;
@@ -682,7 +685,9 @@ class _RootShellState extends State<RootShell> {
             // 切到短剧 tab。
             LibraryPage(
               onBrowse: () => setState(() => _index = 0),
-              onFindDrama: () => setState(() => _index = 1),
+              onFindDrama: kDramaEnabled
+                  ? () => setState(() => _index = 1)
+                  : null,
             ),
             // 手环传书插在书架与我的之间：与 ShellDock 的 _items 同序
             // （0 首页 / 1 短剧 / 2 书架 / 3 手环 / 4 我的），短剧保持下标 1，
@@ -697,6 +702,7 @@ class _RootShellState extends State<RootShell> {
       bottomNavigationBar: ShellDock(
         selectedIndex: _index,
         onSelected: _selectTab,
+        showDrama: kDramaEnabled,
         overVideo: dramaOnVideo,
         staticMaterial: shellDockStaticMaterial(overVideo: dramaOnVideo),
       ),
