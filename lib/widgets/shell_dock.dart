@@ -19,10 +19,16 @@ class ShellDock extends StatelessWidget {
     required this.onSelected,
     required this.overVideo,
     required this.staticMaterial,
+    this.showDrama = true,
   });
 
+  /// 壳层内部下标（0 首页 / 1 短剧 / 2 书架 / 3 手环 / 4 我的）。
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+
+  /// 是否露出短剧入口。关掉时导航栏少一项，但 [selectedIndex] 仍用内部下标，
+  /// 壳层里所有 `_index == 1` 的判断都不用改。
+  final bool showDrama;
 
   /// 短剧推荐频道背后是全屏视频流：导航栏按深色外观绘制。
   final bool overVideo;
@@ -60,18 +66,38 @@ class ShellDock extends StatelessWidget {
     ),
   ];
 
+  /// 短剧在内部下标里的位置；隐藏时从导航栏剔除，其余项顺次前移。
+  static const _dramaSlot = 1;
+
+  /// 内部下标 → 导航栏位置。
+  int _dockIndex(int internal) {
+    if (showDrama) return internal;
+    if (internal <= 0) return 0;
+    return internal - 1;
+  }
+
+  /// 导航栏位置 → 内部下标。
+  int _internalIndex(int dock) {
+    if (showDrama) return dock;
+    return dock >= 1 ? dock + 1 : 0;
+  }
+
   @override
   Widget build(BuildContext context) {
     final reduceMotion =
         einkModeNotifier.value || MediaQuery.disableAnimationsOf(context);
+    final visible = [
+      for (var i = 0; i < _items.length; i++)
+        if (showDrama || i != _dramaSlot) _items[i],
+    ];
     Widget bar = NavigationBar(
-      selectedIndex: selectedIndex,
-      onDestinationSelected: onSelected,
+      selectedIndex: _dockIndex(selectedIndex),
+      onDestinationSelected: (dock) => onSelected(_internalIndex(dock)),
       height: Md3Dimens.navigationBarHeight,
       animationDuration: reduceMotion ? Duration.zero : Md3Motion.medium2,
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       destinations: [
-        for (final item in _items)
+        for (final item in visible)
           NavigationDestination(
             icon: Icon(item.icon),
             selectedIcon: Icon(item.selectedIcon ?? item.icon),
